@@ -388,8 +388,10 @@ const CONFIG = {
   defaultHeaders:['id','date','lat','lng','depth_m','count','sex','site','comments','observer'],
   saveEndpoint:'https://script.google.com/macros/s/AKfycbz4kUIX0stdlHtS9SeenbEoPm_6GoV3xI0Tb7aigyF8tHEGooyyMAlyXqBQQXHfOYak/exec',
   notesHeader:'',  // set to the exact map_latest header that holds your dive notes, e.g. 'notes'. Blank = auto-detect.
-  csvUrl:''        // optional fallback: a File→Share→Publish to web CSV link for the map_latest tab.
+  csvUrl:'',       // optional fallback: a File→Share→Publish to web CSV link for the map_latest tab.
                    // Publish-to-web sends CORS '*', so it loads even from file://. Blank = use the gviz link.
+  autoConfirm:true, // true = prompt to confirm shortly after you finish editing. false = only the "Save changes" bar.
+  autoConfirmDelay:900 // ms of edit-inactivity before the confirm prompt appears.
 };
 
 const state = {
@@ -1107,7 +1109,7 @@ document.getElementById('btnExport').addEventListener('click',()=>{
    to its source row in 'Sightings' by its ORIGINAL key (ID + date + coords),
    captured at load — so editing those fields still updates the right row.
    ========================================================================== */
-function markDirty(id){ state.dirty.add(id); updateSaveBar(); }
+function markDirty(id){ state.dirty.add(id); updateSaveBar(); scheduleAutoConfirm(); }
 function updateSaveBar(){
   const bar=document.getElementById('saveBar');
   const n=state.dirty.size;
@@ -1116,9 +1118,23 @@ function updateSaveBar(){
 }
 function changedRows(){ return state.rows.filter(r=>state.dirty.has(r._id)); }
 
-document.getElementById('btnSave').addEventListener('click',()=>{
+/* after edits stop for a moment, prompt to confirm before anything is saved.
+   set CONFIG.autoConfirm=false to instead use only the manual "Save changes" bar. */
+let acTimer=null;
+function scheduleAutoConfirm(){
+  if(CONFIG.autoConfirm===false) return;
+  clearTimeout(acTimer);
+  acTimer=setTimeout(()=>{
+    if($('svmodal').classList.contains('show')) return;   // already asking
+    if($('cmodal').classList.contains('show')) return;    // mid-delete
+    if(smodal.classList.contains('show')) return;         // mid new-sighting
+    if($('connbanner').classList.contains('show')) return;// offline — saving is futile
+    openSaveDialog();
+  }, CONFIG.autoConfirmDelay||900);
+}
+function openSaveDialog(){
   const rows=changedRows();
-  if(!rows.length){ toast('No unsaved changes'); return; }
+  if(!rows.length) return false;
   const list=rows.slice(0,8).map(r=>'· '+labelFor(r)).join('<br>');
   const more=rows.length>8?`<br>…and ${rows.length-8} more`:'';
   const target=CONFIG.saveEndpoint
@@ -1127,8 +1143,24 @@ document.getElementById('btnSave').addEventListener('click',()=>{
   document.getElementById('svText').innerHTML=`${target}<div class="svlist">${list}${more}</div>`;
   document.getElementById('cscrim').classList.add('show');
   document.getElementById('svmodal').classList.add('show');
-});
+  return true;
+}
+document.getElementById('btnSave').addEventListener('click',()=>{ if(!openSaveDialog()) toast('No unsaved changes'); });
 function closeSave(){ document.getElementById('cscrim').classList.remove('show'); document.getElementById('svmodal').classList.remove('show'); }
+/* JSONP — lets us READ the script's response cross-origin (a normal fetch can't,
+   which is why "saved" was previously a guess). Returns the parsed result object. */
+function jsonp(url){
+  return new Promise((resolve,reject)=>{
+    const cb='__wsd_cb_'+Math.random().toString(36).slice(2);
+    const s=document.createElement('script');
+    const t=setTimeout(()=>{ cleanup(); reject(new Error('timeout')); },20000);
+    function cleanup(){ try{delete window[cb];}catch(e){window[cb]=undefined;} s.remove(); clearTimeout(t); }
+    window[cb]=data=>{ cleanup(); resolve(data); };
+    s.onerror=()=>{ cleanup(); reject(new Error('script blocked')); };
+    s.src=url+(url.includes('?')?'&':'?')+'callback='+cb;
+    document.body.appendChild(s);
+  });
+}
 function doSave(){
   const rows=changedRows();
   closeSave();
@@ -1153,16 +1185,22 @@ function doSave(){
       resight:     state.map.resight ?r[state.map.resight] :undefined
     }
   }));
+  const url=CONFIG.saveEndpoint+'?payload='+encodeURIComponent(JSON.stringify({action:'update',updates}));
+  if(url.length>7500){ toast('Too many edits at once — save them in smaller batches'); return; }
   toast(`Saving ${rows.length} ${rows.length===1?'row':'rows'}…`);
-  fetch(CONFIG.saveEndpoint,{method:'POST',mode:'no-cors',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify({action:'update',updates})})
-    .then(()=>{
+  jsonp(url).then(res=>{
+    if(!res || res.ok===false){ toast('Save failed: '+((res&&res.error)||'no response from the script')); return; }
+    const n=res.updated||0;
+    if(n>0){
       state.dirty.clear(); updateSaveBar(); renderGrid();
-      toast('Sent — reloading to confirm…');
-      setTimeout(()=>loadFromSheet(true).catch(()=>{}),2500);
-    })
-    .catch(()=>toast('Save may have failed — check the Sheet'));
+      toast(`Saved ${n} to Sheet — refreshing…`);
+      setTimeout(()=>loadFromSheet(true).catch(()=>{}),2500);   // reload ONLY after a real write
+    } else {
+      // nothing matched — keep the edit flagged, don't reload (so it won't revert)
+      toast('No matching row in Sightings — edit kept. '+(res.note||''));
+      console.warn('update matched 0 rows:',res);
+    }
+  }).catch(e=>toast('Couldn’t reach the script ('+e.message+') — re-deploy with the doGet below'));
 }
 document.getElementById('svCancel').addEventListener('click',closeSave);
 document.getElementById('svConfirm').addEventListener('click',doSave);
@@ -1245,102 +1283,6 @@ loadFromSheet(true).catch(err=>{
 setTimeout(()=>{map.invalidateSize();bathyRefresh();},200);
 </script>
 
-<!--  ===========================================================================
-  APPS SCRIPT WEB APP — paste into your bound script, deploy as Web App
-  (Execute as "Me", Access "Anyone"), then put the /exec URL in CONFIG.saveEndpoint.
-  Re-deploy (Manage deployments → edit → new version) after pasting this, or the
-  new 'update' action won't exist on the endpoint.
-
-  All actions read/write the SOURCE 'Sightings' tab — never the computed
-  map_latest view (that one is regenerated by formula and can't be written to).
-
-    append : {action:'append', record:{...}}
-    update : {action:'update', updates:[{match:{specimen_id,date,lat,lon}, values:{...}}]}
-    delete : {action:'delete', match:{specimen_id,date,lat,lon}}
-
-  Header matching is by regex (FIELD_MATCH). If your Sightings tab has no
-  'resight' column yet, add one (any header containing "resight") so the flag
-  has somewhere to land — otherwise resight edits are silently dropped.
-
-  var SHEET_ID = '1UnTxSU3phEKkjEbf_bDGBPRh-xYH4Cm1vH5zcg36t2Y';
-  var FIELD_MATCH = {
-    specimen_id:/id|specimen|tag/i, date:/date/i, lat:/lat/i, lon:/(lng|lon)/i,
-    depth:/depth|_m$|^m$/i, count:/count|qty|number/i, sex:/sex|gender/i,
-    site:/site|location/i, comments:/comment|note|remark/i,
-    observer:/observ|diver|recorder|by/i, resight:/resight|re-?sight/i
-  };
-  function colIndex(headers, key){
-    for (var i=0;i<headers.length;i++){ if (FIELD_MATCH[key] && FIELD_MATCH[key].test(headers[i])) return i; }
-    return -1;
-  }
-  function pad(n){ n=+n; return (n<10?'0':'')+n; }
-  function canonDate(v){
-    if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    var s=String(v).trim(); if(!s) return ''; var m;
-    if (m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)) return m[1]+'-'+pad(m[2])+'-'+pad(m[3]);
-    if (m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)){ var y=+m[3]; if(y<100)y+=2000; return y+'-'+pad(m[2])+'-'+pad(m[1]); }
-    if (m=s.match(/^(\d{1,2})\/(\d{4})$/)) return m[2]+'-'+pad(m[1])+'-01';
-    var d=new Date(s); return isNaN(d.getTime())?s:Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  }
-  function canonNum(v){ var f=parseFloat(v); return isNaN(f)?null:Math.round(f*1e5)/1e5; }
-  function canonId(v){ return String(v).trim().toUpperCase(); }
-  // match on whichever key fields are provided; types are normalised first so a
-  // Date cell vs a "23/12/24" string, or -33.79713 vs -33.797130, still agree
-  function rowMatches(rowVals, headers, match){
-    var ok=true, used=false;
-    function need(k, eq){
-      var want=match[k]; if(want==null || String(want).trim()==='') return;
-      var ci=colIndex(headers,k); if(ci<0) return;
-      used=true; if(!eq(rowVals[ci], want)) ok=false;
-    }
-    need('specimen_id', function(a,b){ return canonId(a)===canonId(b); });
-    need('date',        function(a,b){ return canonDate(a)===canonDate(b); });
-    need('lat',         function(a,b){ var x=canonNum(a),y=canonNum(b); return x!=null&&y!=null&&Math.abs(x-y)<1e-5; });
-    need('lon',         function(a,b){ var x=canonNum(a),y=canonNum(b); return x!=null&&y!=null&&Math.abs(x-y)<1e-5; });
-    return used && ok;
-  }
-  function doPost(e){
-    var body = JSON.parse(e.postData.contents);
-    var sh   = SpreadsheetApp.openById(SHEET_ID).getSheetByName('Sightings');
-    var headers = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
-    var out = {ok:true};
-
-    if (body.action === 'append' || !body.action){
-      var rec = body.record || {};
-      sh.appendRow(headers.map(function(h){
-        for (var k in FIELD_MATCH){ if (FIELD_MATCH[k].test(h)) return rec[k]!=null ? rec[k] : ''; }
-        return '';
-      }));
-
-    } else if (body.action === 'update'){
-      var updates = body.updates || [];
-      var data = sh.getDataRange().getValues();           // includes header at row 0
-      var changed = 0;
-      updates.forEach(function(u){
-        for (var r=1; r<data.length; r++){
-          if (rowMatches(data[r], headers, u.match || {})){
-            headers.forEach(function(h, ci){
-              for (var k in FIELD_MATCH){
-                if (FIELD_MATCH[k].test(h) && u.values[k] !== undefined){
-                  sh.getRange(r+1, ci+1).setValue(u.values[k]);
-                }
-              }
-            });
-            changed++; break;                              // first match only
-          }
-        }
-      });
-      out.updated = changed;
-
-    } else if (body.action === 'delete'){
-      var m = body.match || {};
-      var rows = sh.getDataRange().getValues();
-      for (var r2=rows.length-1; r2>=1; r2--){            // bottom-up so indexes stay valid
-        if (rowMatches(rows[r2], headers, m)){ sh.deleteRow(r2+1); out.deleted=true; break; }
-      }
-    }
-    return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
-  }
-  ============================================================================ -->
+<!-- Sheet write-back endpoint lives in the separate Code.gs file (paste it into Extensions -> Apps Script and deploy a NEW VERSION). -->
 </body>
 </html>
