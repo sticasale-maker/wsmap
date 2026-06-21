@@ -1,0 +1,1346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Weedy Seadragon Sightings — Editor & SEED Map</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --abyss:#06141d; --ink:#0a2230; --shelf:#0e2c3c; --shelf-2:#123545;
+  --line:#1d4a5e; --faint:#5a7e8c;
+  --isobath:#4fd1c5; --isobath-dim:#2f8f86;
+  --sand:#eaf4f6; --sand-dim:#84a6b3;
+  --coral:#ec7551; --gold:#f2c14e; --slate:#7d97a4; --kelp:#5b9e63; --danger:#ec7551;
+  --disp:'Fraunces',Georgia,serif;
+  --ui:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --left-w:50%; --row-h:30px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--ui);background:var(--abyss);color:var(--sand);overflow:hidden;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:none}
+::selection{background:var(--coral);color:#fff}
+
+#app{display:flex;height:100vh;width:100vw}
+#left{width:var(--left-w);min-width:300px;display:flex;flex-direction:column;background:var(--ink);border-right:1px solid var(--line)}
+#splitter{width:6px;cursor:col-resize;background:var(--abyss);flex:0 0 6px;border-left:1px solid var(--line);border-right:1px solid var(--line);transition:background .15s}
+#splitter:hover,#splitter.drag{background:var(--isobath-dim)}
+#right{flex:1;position:relative;min-width:280px}
+
+.l-head{padding:14px 16px 11px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--shelf),var(--ink))}
+.l-title{font-family:var(--disp);font-weight:600;font-size:17px;letter-spacing:-.01em;display:flex;align-items:baseline;gap:10px}
+.l-title em{font-style:italic;color:var(--gold)}
+.l-title .badge{font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-family:var(--ui)}
+.l-sub{font-size:11.5px;color:var(--sand-dim);margin-top:6px;display:flex;gap:16px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.l-sub b{color:var(--isobath);font-weight:600}
+
+.toolbar{display:flex;gap:6px;flex-wrap:wrap;padding:9px 16px;border-bottom:1px solid var(--line);align-items:center}
+.tabs{display:flex;gap:2px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--ink)}
+.tab{font-family:var(--ui);font-size:12px;font-weight:500;color:var(--sand-dim);padding:10px 15px;border-bottom:2px solid transparent;margin-bottom:-1px;letter-spacing:.01em}
+.tab:hover{color:var(--sand)}
+.tab.active{color:var(--isobath);border-bottom-color:var(--isobath)}
+.spec-wrap{padding:0}
+.spec{display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid var(--line);cursor:pointer}
+.spec:hover{background:#0f2c3a}
+.spec.sel{background:#39190f}
+.spec.sel{box-shadow:inset 3px 0 0 var(--coral)}
+.spec .dot{width:11px;height:11px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.25)}
+.spec .sid{font-family:var(--disp);font-size:14px;font-weight:600;min-width:62px;color:var(--sand)}
+.spec .meta{flex:1;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--sand-dim);font-variant-numeric:tabular-nums}
+.spec .cnt{flex:none;font-size:10px;color:var(--abyss);background:var(--isobath-dim);border-radius:10px;padding:2px 9px;font-weight:600}
+.btn{font-family:var(--ui);font-size:11.5px;font-weight:500;padding:6px 11px;border-radius:6px;background:var(--shelf);border:1px solid var(--line);color:var(--sand);display:inline-flex;align-items:center;gap:6px;line-height:1;transition:background .12s,border-color .12s,transform .05s}
+.btn:hover{border-color:var(--isobath);color:#fff}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--isobath);border-color:var(--isobath);color:var(--abyss);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08);color:var(--abyss)}
+.btn.coral{background:var(--coral);border-color:var(--coral);color:var(--abyss);font-weight:600}
+.btn.coral:hover{filter:brightness(1.07);color:var(--abyss)}
+.btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tool-spacer{flex:1}
+.search{position:relative}
+.search input{font-size:11.5px;padding:6px 9px 6px 27px;width:150px;background:var(--abyss);border:1px solid var(--line);border-radius:6px;color:var(--sand)}
+.search input:focus{outline:none;border-color:var(--isobath)}
+.search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%);width:12px;height:12px;stroke:var(--sand-dim);fill:none;stroke-width:2}
+
+.grid-wrap{flex:1;overflow:auto;position:relative}
+.grid-wrap::-webkit-scrollbar{width:8px;height:8px}
+.grid-wrap::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px;font-variant-numeric:tabular-nums}
+.grid thead th{position:sticky;top:0;z-index:3;background:var(--shelf);font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);text-align:left;padding:8px;white-space:nowrap;border-bottom:1px solid var(--line);border-right:1px solid var(--line);cursor:pointer;user-select:none}
+.grid thead th.col-idx,.grid thead th.col-act{cursor:default}
+.grid thead th:hover{color:var(--sand-dim)}
+.grid thead th .caret{color:var(--isobath);margin-left:4px}
+.grid thead th .maptag{display:inline-block;margin-left:5px;font-size:8px;padding:1px 4px;border-radius:3px;background:var(--isobath-dim);color:var(--abyss);letter-spacing:.04em}
+.grid thead th{cursor:grab}
+.grid thead th .thlab{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+.grid thead th.drag{opacity:.45}
+.grid thead th.drop-target{box-shadow:inset 3px 0 0 var(--isobath)}
+.grid thead th .col-resize{position:absolute;top:0;right:0;width:7px;height:100%;cursor:col-resize;z-index:5}
+.grid thead th .col-resize:hover{background:var(--isobath-dim)}
+.grid tbody td{overflow:hidden}
+.grid tbody td{padding:0;border-bottom:1px solid var(--line);border-right:1px solid var(--line);height:var(--row-h);background:var(--ink)}
+.grid tbody tr:hover td{background:#0f2c3a}
+.grid tbody tr.sel td{background:#39190f}
+.grid tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--coral)}
+.grid td input{width:100%;height:100%;border:none;background:transparent;padding:0 8px;font-size:11.5px;color:var(--sand);font-variant-numeric:tabular-nums}
+.grid td input:focus{outline:2px solid var(--isobath);outline-offset:-2px;background:var(--abyss)}
+.grid td.num input{text-align:right}
+.grid td.coordbad input{color:var(--gold)}
+.col-idx{width:32px;text-align:center;color:var(--faint);font-size:9.5px;background:var(--shelf)!important;position:sticky;left:0;z-index:2;border-right:1px solid var(--line)}
+.grid thead th.col-idx{z-index:4}
+.col-act{width:46px;text-align:center;white-space:nowrap}
+.dragpin{color:var(--faint);font-size:11px}
+.dragpin.has{color:var(--isobath)}
+.rowdel{display:none;margin-left:5px;color:var(--faint);font-size:12px;line-height:1;padding:1px 4px;border-radius:4px;vertical-align:middle}
+.grid tbody tr:hover .rowdel{display:inline-block}
+.rowdel:hover{color:#fff;background:var(--danger)}
+.depthcell{position:relative}
+.depthbar{position:absolute;left:0;bottom:0;height:2px;background:var(--isobath);opacity:.7}
+
+.empty{padding:38px 22px;text-align:center;color:var(--sand-dim);font-size:12.5px;line-height:1.6}
+.empty b{display:block;color:var(--sand);font-family:var(--disp);font-size:17px;margin-bottom:10px}
+.empty .row{margin-top:16px;display:flex;gap:8px;justify-content:center}
+
+#map{position:absolute;inset:0;background:#08303f;z-index:0}
+.leaflet-control-attribution{background:rgba(6,20,29,.7)!important;color:var(--faint)!important}
+.leaflet-control-attribution a{color:var(--sand-dim)!important}
+
+.bathy-ctl{background:var(--shelf-2);border:1px solid var(--line);border-radius:9px;padding:8px 11px 9px;font-family:var(--ui);color:var(--sand);box-shadow:0 3px 12px rgba(0,0,0,.45);min-width:188px}
+.bathy-ctl label.hd{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;font-weight:500;margin-bottom:2px}
+.bathy-ctl input[type=checkbox]{accent-color:var(--isobath);width:14px;height:14px;cursor:pointer}
+.bathy-ctl .op{margin-top:6px;display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
+.bathy-ctl .op span{min-width:60px;flex:none}
+.bathy-ctl .op.master{padding-bottom:8px;margin-bottom:3px;border-bottom:1px solid var(--line)}
+.bathy-ctl .op.master span{color:var(--sand-dim);font-weight:600}
+.bathy-ctl .op input[type=range]{flex:1;accent-color:var(--gold);height:3px;cursor:pointer}
+.bathy-ctl.off .op{opacity:.35;pointer-events:none}
+.bathy-ctl .row2{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.bathy-ctl .rst{background:none;border:1px solid var(--line);color:var(--sand-dim);font-family:inherit;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:6px;cursor:pointer;flex:none}
+.bathy-ctl .rst:hover{border-color:var(--isobath);color:var(--isobath)}
+.bathy-ctl .lgd{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
+.bathy-ctl .lgd>summary{cursor:pointer;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);list-style:none;user-select:none}
+.bathy-ctl .lgd>summary::-webkit-details-marker{display:none}
+.bathy-ctl .lgd>summary:before{content:'\25B8 ';color:var(--faint)}
+.bathy-ctl .lgd[open]>summary{color:var(--sand-dim)}
+.bathy-ctl .lgd[open]>summary:before{content:'\25BE '}
+.bathy-ctl .lrow{display:flex;align-items:center;gap:7px;margin-top:5px;font-size:10.5px;color:var(--sand);text-transform:none;letter-spacing:0}
+.bathy-ctl .lsw{width:11px;height:11px;border-radius:2px;flex:none;border:1px solid rgba(255,255,255,.3)}
+
+.coord-ctl{background:rgba(14,44,60,.88);border:1px solid var(--line);border-radius:7px;padding:4px 9px;font-family:var(--ui);font-size:11.5px;color:var(--sand);font-variant-numeric:tabular-nums;letter-spacing:.02em;box-shadow:0 2px 8px rgba(0,0,0,.4);display:flex;align-items:center;gap:7px}
+.coord-ctl b{color:var(--faint);font-weight:600;text-transform:uppercase;font-size:9px;letter-spacing:.09em}
+.coord-ctl span{min-width:148px}
+.coord-ctl.copied{border-color:var(--isobath)}
+.coord-ctl.copied b{color:var(--isobath)}
+
+.leaflet-tooltip.sd-label{background:rgba(14,44,60,.92);border:1px solid var(--line);color:var(--sand);font-family:var(--ui);font-size:10px;font-weight:500;padding:2px 6px;border-radius:4px;box-shadow:none}
+.leaflet-tooltip.sd-label::before{display:none}
+
+/* draft pin for the new-sighting flow */
+.draft-pin{width:18px;height:18px;border-radius:50%;background:var(--coral);border:3px solid #fff;
+  box-shadow:0 0 0 2px var(--coral),0 2px 6px rgba(0,0,0,.5);animation:dpulse 1.5s ease-in-out infinite;cursor:grab}
+.draft-pin:active{cursor:grabbing}
+@keyframes dpulse{50%{box-shadow:0 0 0 7px rgba(236,117,81,.25),0 2px 6px rgba(0,0,0,.5)}}
+
+#viewToggle{display:none;position:absolute;top:12px;left:12px;z-index:600}
+
+/* ---- new-sighting modal (docked left, map stays interactive) ---- */
+#smodal{position:fixed;top:64px;left:16px;width:468px;max-height:calc(100vh - 96px);z-index:1200;
+  background:var(--ink);border:1px solid var(--isobath-dim);border-radius:12px;
+  box-shadow:0 20px 60px rgba(0,0,0,.6);display:none;flex-direction:column;overflow:hidden}
+#smodal.show{display:flex}
+.sm-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;
+  border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--shelf),var(--ink))}
+.sm-head h3{font-family:var(--disp);font-weight:600;font-size:16px}
+.sm-head h3 em{font-style:italic;color:var(--gold)}
+.sm-x{color:var(--sand-dim);font-size:16px;line-height:1;padding:2px 6px;border-radius:6px}
+.sm-x:hover{color:var(--coral);background:var(--shelf)}
+.sm-body{padding:14px 16px;overflow:auto;display:flex;flex-direction:column;gap:11px}
+.sm-body label{display:flex;flex-direction:column;gap:4px;font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint)}
+.sm-body input,.sm-body select,.sm-body textarea{font-family:var(--ui);font-size:13px;text-transform:none;
+  letter-spacing:0;color:var(--sand);background:var(--abyss);border:1px solid var(--line);
+  border-radius:7px;padding:7px 9px;font-variant-numeric:tabular-nums}
+.sm-body input:focus,.sm-body select:focus,.sm-body textarea:focus{outline:none;border-color:var(--isobath)}
+.sm-body textarea{resize:vertical;min-height:58px;font-variant-numeric:normal}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.loc{background:var(--shelf);border:1px solid var(--line);border-radius:9px;padding:11px;display:flex;flex-direction:column;gap:10px}
+.loc-row{display:flex;align-items:center;gap:10px}
+.loc-hint{font-size:11px;color:var(--sand-dim);font-variant-numeric:tabular-nums}
+.loc-hint.set{color:var(--isobath)}
+.loc-note{font-size:10.5px;color:var(--faint);font-style:italic;line-height:1.4}
+.checks{display:flex;gap:18px;flex-wrap:wrap}
+.chk{flex-direction:row!important;align-items:center;gap:7px;text-transform:none!important;letter-spacing:0!important;font-size:12.5px!important;color:var(--sand)!important;cursor:pointer}
+.chk input{width:15px;height:15px;accent-color:var(--isobath);cursor:pointer}
+.req{color:var(--coral)}
+.sm-foot{display:flex;gap:9px;padding:12px 16px;border-top:1px solid var(--line);background:var(--shelf)}
+.sm-foot .btn{flex:1;justify-content:center;padding:9px}
+
+#dropbanner{display:none;position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:1300;
+  background:var(--coral);color:#fff;font-size:12.5px;font-weight:500;padding:8px 14px;border-radius:9px;
+  align-items:center;gap:12px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+#dropbanner.show{display:flex}
+#dropbanner .x{cursor:pointer;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:1px 7px;font-size:11px}
+
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff;font-weight:600}
+.btn.danger:hover{filter:brightness(1.07);color:#fff}
+#cscrim{display:none;position:fixed;inset:0;background:rgba(3,12,18,.55);z-index:1390}
+#cscrim.show{display:block}
+#cmodal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1400;
+  width:340px;max-width:calc(100vw - 32px);background:var(--ink);border:1px solid var(--isobath-dim);
+  border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.6);padding:18px 18px 16px}
+#cmodal.show{display:block}
+#cmodal h3{font-family:var(--disp);font-weight:600;font-size:16px;margin-bottom:8px}
+#cmodal p{font-size:12.5px;color:var(--sand-dim);line-height:1.5;margin-bottom:16px}
+#cmodal .cm-foot{display:flex;gap:9px}
+#cmodal .cm-foot .btn{flex:1;justify-content:center;padding:9px}
+
+/* confirm-save dialog — shares the look of the delete dialog */
+#svmodal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1400;
+  width:360px;max-width:calc(100vw - 32px);background:var(--ink);border:1px solid var(--isobath-dim);
+  border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.6);padding:18px 18px 16px}
+#svmodal.show{display:block}
+#svmodal h3{font-family:var(--disp);font-weight:600;font-size:16px;margin-bottom:8px}
+#svmodal p{font-size:12.5px;color:var(--sand-dim);line-height:1.5;margin-bottom:6px}
+#svmodal .cm-foot{display:flex;gap:9px;margin-top:14px}
+#svmodal .cm-foot .btn{flex:1;justify-content:center;padding:9px}
+.svlist{max-height:168px;overflow:auto;font-size:11.5px;color:var(--sand);line-height:1.75;
+  font-variant-numeric:tabular-nums;border-top:1px solid var(--line);margin-top:10px;padding-top:9px}
+
+/* unsaved-changes bar (appears only when edits are pending) */
+.savebar{display:none;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#3a1a10,#2a130b)}
+.savebar.show{display:flex}
+.savebar .sb-msg{font-size:11.5px;color:var(--sand);font-variant-numeric:tabular-nums}
+.savebar .sb-msg b{color:var(--coral);font-weight:600}
+.savebar .sb-w{color:var(--sand-dim)}
+
+/* resight flag cell */
+.grid td.flagcell{text-align:center}
+.grid td.flagcell input{width:15px;height:15px;accent-color:var(--isobath);cursor:pointer;vertical-align:middle}
+
+/* rows with unsaved edits — gold rail on the index cell */
+.grid tbody tr.dirty td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
+.grid tbody tr.dirty.sel td:first-child{box-shadow:inset 3px 0 0 var(--coral)}
+
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:var(--shelf-2);border:1px solid var(--isobath-dim);color:var(--sand);font-size:12px;padding:9px 16px;border-radius:8px;z-index:9999;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+#connbanner{display:none;position:fixed;top:0;left:0;right:0;z-index:9998;align-items:center;gap:10px;
+  padding:7px 14px;background:linear-gradient(180deg,#3a1a10,#2a130b);border-bottom:1px solid var(--coral);
+  font-family:var(--ui);font-size:11.5px;color:var(--sand);box-shadow:0 4px 14px rgba(0,0,0,.4)}
+#connbanner.show{display:flex}
+#connbanner .cb-dot{width:8px;height:8px;border-radius:50%;background:var(--coral);flex:none;animation:dpulse 1.6s ease-in-out infinite}
+#connbanner .cb-msg{flex:1;line-height:1.4}
+#connbanner .cb-retry{flex:none;border:1px solid var(--coral);color:var(--coral);background:none;
+  font-family:inherit;font-size:11px;font-weight:600;padding:3px 12px;border-radius:6px;cursor:pointer}
+#connbanner .cb-retry:hover{background:var(--coral);color:#fff}
+
+@media(max-width:820px){
+  #left{width:100%!important;border-right:none}
+  #splitter{display:none}
+  #right{position:absolute;inset:0}
+  body.view-map #left{display:none}
+  body.view-data #right{display:none}
+  #viewToggle{display:flex}
+  #smodal{left:8px;right:8px;width:auto;top:8px;max-height:calc(100vh - 16px)}
+}
+@media(min-width:821px){ body.view-map #left,body.view-data #left{display:flex} }
+</style>
+</head>
+<body class="view-data">
+
+<div id="app">
+  <section id="left">
+    <div class="l-head">
+      <div class="l-title">Weedy Seadragon <em>sightings</em> <span class="badge">VIZ · editor</span></div>
+      <div class="l-sub">
+        <span><b id="statTotal">0</b> records</span>
+        <span><b id="statMapped">0</b> mapped</span>
+        <span><b id="statColonies">0</b> colonies (2+)</span>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="sightings">Sightings</button>
+      <button class="tab" data-tab="specimens">Specimens</button>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn primary" id="btnNew"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New sighting</button>
+      <div class="tool-spacer"></div>
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <input id="search" placeholder="filter…" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="toolbar" style="border-top:none">
+      <button class="btn" id="btnLoadSheet"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>Reload from Sheet</button>
+      <div class="tool-spacer"></div>
+      <button class="btn" id="btnExport"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>Export CSV</button>
+    </div>
+
+    <div class="savebar" id="saveBar">
+      <span class="sb-msg"><b id="saveCount">0</b> unsaved <span class="sb-w">change(s)</span></span>
+      <div class="tool-spacer"></div>
+      <button class="btn coral" id="btnSave"><svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7"/><path d="M8 14h8"/></svg>Save changes</button>
+    </div>
+
+    <div class="grid-wrap" id="gridWrap"></div>
+    <div class="grid-wrap spec-wrap" id="specWrap" style="display:none"></div>
+  </section>
+
+  <div id="splitter"></div>
+
+  <section id="right">
+    <div id="map"></div>
+    <button class="btn primary" id="viewToggle">Show data</button>
+    <div id="dropbanner">Tap the map to place the point <span class="x" id="dropCancel">cancel</span></div>
+  </section>
+</div>
+
+<!-- new-sighting modal -->
+<div id="smodal">
+  <div class="sm-head"><h3>New <em>sighting</em></h3><button class="sm-x" id="smClose">✕</button></div>
+  <div class="sm-body">
+    <div class="loc">
+      <div class="loc-row">
+        <button class="btn coral" id="smDrop"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Drop on map</button>
+        <span class="loc-hint" id="smLocHint">no location set</span>
+      </div>
+      <div class="f2">
+        <label>Latitude<input id="smLat" inputmode="decimal" placeholder="-33.79…"></label>
+        <label>Longitude<input id="smLng" inputmode="decimal" placeholder="151.30…"></label>
+      </div>
+      <div class="loc-note">Drag the coral pin to fine-tune — the dot moves, the map stays put.</div>
+    </div>
+    <div class="f2">
+      <label>Date<input id="smDate" placeholder="yyyy-mm-dd"></label>
+      <label>Depth (m)<input id="smDepth" inputmode="decimal" placeholder="22"></label>
+    </div>
+    <div class="f2">
+      <label>Specimen ID(s)<input id="smId" placeholder="Wildaware ID — optional"></label>
+      <label>Count<input id="smCount" inputmode="numeric" value="1"></label>
+    </div>
+    <div class="f2">
+      <label>Sex<select id="smSex"><option>Unknown</option><option>Male</option><option>Female</option><option>Juvenile</option></select></label>
+      <label>Position source<select id="smPos"><option>GPS</option><option>estimated (map)</option></select></label>
+    </div>
+    <div class="f2">
+      <label>Site<input id="smSite" placeholder="optional"></label>
+      <label>Observer<select id="smObserver"><option>Marco</option><option>Pete</option></select></label>
+    </div>
+    <div class="checks">
+      <label class="chk"><input type="checkbox" id="smEggs"> Carrying eggs</label>
+      <label class="chk"><input type="checkbox" id="smResight"> Re-sight</label>
+    </div>
+    <label>Comments<textarea id="smComments" placeholder="conditions, behaviour, anything notable…"></textarea></label>
+  </div>
+  <div class="sm-foot">
+    <button class="btn" id="smCancel">Cancel</button>
+    <button class="btn coral" id="smCommit">Commit</button>
+  </div>
+</div>
+
+<!-- confirm-delete dialog -->
+<div id="cscrim"></div>
+<div id="cmodal">
+  <h3>Delete sighting?</h3>
+  <p id="cmText">This removes the record from the list and the map.</p>
+  <div class="cm-foot">
+    <button class="btn" id="cmCancel">Cancel</button>
+    <button class="btn danger" id="cmConfirm">Delete</button>
+  </div>
+</div>
+
+<!-- confirm-save dialog -->
+<div id="svmodal">
+  <h3>Save changes?</h3>
+  <p id="svText">Write your edits back to the Sheet.</p>
+  <div class="cm-foot">
+    <button class="btn" id="svCancel">Keep editing</button>
+    <button class="btn coral" id="svConfirm">Save changes</button>
+  </div>
+</div>
+
+<div id="connbanner"><span class="cb-dot"></span><span class="cb-msg"></span><button class="cb-retry" id="connRetry">Retry</button></div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+<script>
+/* ============================================================================
+   CONFIG
+   saveEndpoint: paste your deployed Apps Script Web App /exec URL here so
+   "Commit" appends a row to the Sheet. The matching doPost is at the bottom
+   of this file. Leave '' and commits are added locally only (Copy/Export still
+   push them back).
+   ========================================================================== */
+const CONFIG = {
+  sheetId:'1UnTxSU3phEKkjEbf_bDGBPRh-xYH4Cm1vH5zcg36t2Y',
+  sheetGid:'680128058',
+  defaultHeaders:['id','date','lat','lng','depth_m','count','sex','site','comments','observer'],
+  saveEndpoint:'https://script.google.com/macros/s/AKfycbz4kUIX0stdlHtS9SeenbEoPm_6GoV3xI0Tb7aigyF8tHEGooyyMAlyXqBQQXHfOYak/exec',
+  notesHeader:'',  // set to the exact map_latest header that holds your dive notes, e.g. 'notes'. Blank = auto-detect.
+  csvUrl:''        // optional fallback: a File→Share→Publish to web CSV link for the map_latest tab.
+                   // Publish-to-web sends CORS '*', so it loads even from file://. Blank = use the gviz link.
+};
+
+const state = {
+  headers:[], rows:[],
+  map:{lat:null,lng:null,id:null,label:null,date:null,depth:null,count:null,sex:null,site:null,comments:null,observer:null,eggs:null,resight:null,position:null},
+  selId:null, pickMode:false, markerLayer:null,
+  sort:{col:null,dir:1},
+  colOrder:null, colWidth:{}, specSel:new Set(),
+  dirty:new Set()           // _id of rows edited in-grid, awaiting save to the Sheet
+};
+const uid = () => 'r'+Math.random().toString(36).slice(2,9);
+
+/* ============================================================================
+   MAP + SEED BATHYMETRY (verbatim from the explorer)
+   ========================================================================== */
+const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([-33.7926,151.3030],15);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {attribution:'© OpenStreetMap, © CARTO · data: Seadragon Search · bathymetry: NSW DCCEEW (SEED)',maxZoom:19,subdomains:'abcd'}).addTo(map);
+
+const SEED=[
+  {key:'DEM (depth)', pane:'seedDEM',  z:250,op:1.0, dpi:192,blend:'normal',  base:'https://mapprod2.environment.nsw.gov.au/arcgis/rest/services/Coastal_Marine/NSW_Marine_Lidar_Bathymetry_Data_2018/MapServer/export',show:'show:2',img:null},
+  {key:'Slope',       pane:'seedSlope',z:251,op:0.65,dpi:192,blend:'normal',  base:'https://mapprod2.environment.nsw.gov.au/arcgis/rest/services/Coastal_Marine/NSW_Marine_Lidar_Bathymetry_Data_2018/MapServer/export',show:'show:1',img:null},
+  {key:'Landforms',   pane:'seedForms',z:252,op:0.7, dpi:192,blend:'multiply',base:'https://mapprod2.environment.nsw.gov.au/arcgis/rest/services/Coastal_Marine/SeabedLandforms/MapServer/export',show:'show:0,1,2',img:null},
+  {key:'Contour lines',pane:'seedIso', z:254,op:1.0, dpi:96, blend:'normal',  base:'https://mapprod2.environment.nsw.gov.au/arcgis/rest/services/Coastal_Marine/NSW_Marine_Lidar_Bathymetry_Data_2018/MapServer/export',show:'show:0',img:null}
+];
+SEED.forEach(s=>{const p=map.createPane(s.pane);p.style.zIndex=s.z;p.style.mixBlendMode=s.blend;});
+SEED.forEach(s=>s.def=s.op);
+let bathyOn=true, bathyMaster=1.0;
+const bathyMasterDef=bathyMaster;
+const LANDFORM_LEGEND=[
+  ['#107e8d','Depressions & channels (rugose)'],
+  ['#bce8ff','Depressions & channels (smooth)'],
+  ['#794d42','Peaks'],
+  ['#ffffb5','Plains'],
+  ['#d0895b','Reefs'],
+  ['#98201f','Scarps']
+];
+function seedUrl(s){
+  const b=map.getBounds();
+  const sw=L.CRS.EPSG3857.project(b.getSouthWest());
+  const ne=L.CRS.EPSG3857.project(b.getNorthEast());
+  const sz=map.getSize();
+  const q=new URLSearchParams({
+    bbox:`${sw.x},${sw.y},${ne.x},${ne.y}`,
+    bboxSR:'102100', imageSR:'102100',
+    size:`${sz.x},${sz.y}`,
+    dpi:String(s.dpi||192), format:'png32', transparent:'true',
+    layers:s.show, f:'image'
+  });
+  return s.base+'?'+q.toString();
+}
+function bathyRefresh(){
+  if(!bathyOn) return;
+  const b=map.getBounds();
+  SEED.forEach(s=>{
+    const url=seedUrl(s);
+    if(s.img){ s.img.setBounds(b); s.img.setUrl(url); }
+    else{ s.img=L.imageOverlay(url,b,{opacity:s.op*bathyMaster,pane:s.pane,interactive:false}).addTo(map); }
+  });
+}
+map.on('moveend zoomend resize', bathyRefresh);
+bathyRefresh();
+(function(){
+  const Ctl=L.Control.extend({options:{position:'topright'},onAdd:function(){
+    const d=L.DomUtil.create('div','bathy-ctl');
+    d.innerHTML='<div class="row2"><label class="hd"><input type="checkbox" checked> SEED bathymetry</label><button class="rst" type="button">Reset</button></div>'
+      +`<div class="op master"><span>ADD SEED</span><input id="bMaster" type="range" min="0" max="100" value="${Math.round(bathyMaster*100)}"></div>`
+      +'<details class="lgd"><summary>Layers</summary>'
+      +SEED.map((s,i)=>`<div class="op"><span>${s.key}</span><input data-i="${i}" type="range" min="0" max="100" value="${Math.round(s.op*100)}"></div>`).join('')
+      +'</details>'
+      +'<details class="lgd"><summary>Landforms legend</summary>'
+      +LANDFORM_LEGEND.map(([c,n])=>`<div class="lrow"><span class="lsw" style="background:${c}"></span>${n}</div>`).join('')
+      +'</details>';
+    L.DomEvent.disableClickPropagation(d);L.DomEvent.disableScrollPropagation(d);
+    const cb=d.querySelector('input[type=checkbox]'),ms=d.querySelector('#bMaster');
+    cb.addEventListener('change',()=>{
+      bathyOn=cb.checked;
+      if(bathyOn){d.classList.remove('off');bathyRefresh();}
+      else{d.classList.add('off');SEED.forEach(s=>{if(s.img){map.removeLayer(s.img);s.img=null;}});}
+    });
+    ms.addEventListener('input',e=>{
+      bathyMaster=e.target.value/100;
+      SEED.forEach(s=>{if(s.img)s.img.setOpacity(s.op*bathyMaster);});
+    });
+    d.querySelectorAll('input[data-i]').forEach(r=>{
+      r.addEventListener('input',()=>{const s=SEED[+r.dataset.i];s.op=r.value/100;if(s.img)s.img.setOpacity(s.op*bathyMaster);});
+    });
+    d.querySelector('.rst').addEventListener('click',()=>{
+      bathyMaster=bathyMasterDef; ms.value=Math.round(bathyMasterDef*100);
+      SEED.forEach((s,i)=>{ s.op=s.def; const r=d.querySelector(`input[data-i="${i}"]`); if(r)r.value=Math.round(s.def*100); if(s.img)s.img.setOpacity(s.op*bathyMaster); });
+    });
+    return d;
+  }});
+  map.addControl(new Ctl());
+})();
+
+(function(){
+  const CoordCtl=L.Control.extend({options:{position:'bottomleft'},onAdd:function(){
+    const d=L.DomUtil.create('div','coord-ctl');
+    d.innerHTML='<b>lat, lng</b><span>move over map</span>';
+    L.DomEvent.disableClickPropagation(d);
+    this._el=d; this._sp=d.querySelector('span'); return d;
+  }});
+  const cc=new CoordCtl(); map.addControl(cc);
+  const fmt=ll=>ll.lat.toFixed(5)+', '+ll.lng.toFixed(5);
+  map.on('mousemove',e=>{ cc._sp.textContent=fmt(e.latlng); cc._el.classList.remove('copied'); });
+  map.on('click',e=>{
+    if(state.pickMode){ placeDraft(e.latlng.lat,e.latlng.lng); return; }
+    const t=fmt(e.latlng);
+    cc._sp.textContent=t;
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).catch(()=>{});}
+    cc._el.classList.add('copied');
+  });
+})();
+
+state.markerLayer = L.layerGroup().addTo(map);
+
+/* ============================================================================
+   COLUMN MAPPING
+   ========================================================================== */
+function detect(headers,patterns){ for(const p of patterns){const h=headers.find(x=>p.test(x));if(h)return h;} return null; }
+function autoMap(){
+  const h=state.headers;
+  state.map.lat     = detect(h,[/^lat$/i,/latitude/i,/\blat\b/i]);
+  state.map.lng     = detect(h,[/^lng$/i,/^lon$/i,/longitude/i,/\blng\b/i,/\blon\b/i]);
+  state.map.id      = detect(h,[/^id$/i,/specimen/i,/\btag\b/i,/animal/i]);
+  state.map.label   = detect(h,[/label/i]);
+  state.map.date    = detect(h,[/date/i]);
+  state.map.depth   = detect(h,[/depth/i,/^m$/i,/_m$/i]);
+  state.map.count   = detect(h,[/count/i,/\bn\b/i,/number/i,/qty/i]);
+  state.map.sex     = detect(h,[/sex/i,/gender/i]);
+  state.map.site    = detect(h,[/site/i,/location/i,/place/i]);
+  state.map.comments= detect(h,[/^notes?$/i,/^comments?$/i,/note/i,/comment/i,/remark/i]);
+  if(CONFIG.notesHeader && h.includes(CONFIG.notesHeader)) state.map.comments=CONFIG.notesHeader;
+  state.map.observer= detect(h,[/observ/i,/diver/i,/recorder/i,/\bwho\b/i,/_by$/i,/^by$/i]);
+  state.map.eggs    = detect(h,[/^eggs$/i,/egg/i]);
+  state.map.resight = detect(h,[/resight/i,/re-?sight/i]);
+  state.map.position= detect(h,[/position_source/i,/position/i,/source/i,/method/i]);
+  ensureComments();
+  ensureResight();
+}
+// guarantee an editable resight flag column exists even if the view omits it
+function ensureResight(){
+  if(state.map.resight && state.headers.includes(state.map.resight)) return;
+  if(!state.map.resight){
+    if(!state.headers.includes('resight')) state.headers.push('resight');
+    state.map.resight='resight';
+  } else if(!state.headers.includes(state.map.resight)){
+    state.headers.push(state.map.resight);
+  }
+}
+// truthy test for the flag value coming from the Sheet
+function isResighted(v){ return /^(y|yes|true|1|✓|x)$/i.test(String(v??'').trim()); }
+// immutable original key used to match this row back to its Sightings source row
+function snapshotKey(row){
+  row._key={
+    specimen_id: state.map.id  ?String(row[state.map.id] ??'').trim():'',
+    date:        state.map.date?String(row[state.map.date]??'').trim():'',
+    lat:         state.map.lat ?String(row[state.map.lat] ??'').trim():'',
+    lon:         state.map.lng ?String(row[state.map.lng] ??'').trim():''
+  };
+}
+// guarantee an editable comments column exists even if the view omits notes
+function ensureComments(){
+  if(state.map.comments && state.headers.includes(state.map.comments)) return;
+  if(!state.map.comments){
+    if(!state.headers.includes('comments')) state.headers.push('comments');
+    state.map.comments='comments';
+  } else if(!state.headers.includes(state.map.comments)){
+    state.headers.push(state.map.comments);
+  }
+}
+/* desired display order: date, ID, depth, comments, lat, lng, then the rest.
+   the pre-built label column is hidden (still used for map tooltips). */
+function orderedKeys(){
+  const m=state.map;
+  const pref=[m.date,m.id,m.resight,m.depth,m.comments,m.lat,m.lng].filter(Boolean);
+  const seen=new Set(pref);
+  return pref.concat(state.headers.filter(h=>!seen.has(h) && h!==m.label));
+}
+function colLabel(h){
+  if(h===state.map.id) return 'ID';
+  if(h===state.map.comments) return /note/i.test(h)?'Notes':'Comments';
+  if(h===state.map.resight) return 'Resighted';
+  return h;
+}
+/* user-arranged order: starts from the default, keeps the user's drag order,
+   drops removed columns and appends any new ones */
+function displayKeys(){
+  const def=orderedKeys();
+  const exist=new Set(def);
+  let order=(state.colOrder||[]).filter(k=>exist.has(k));
+  def.forEach(k=>{ if(!order.includes(k)) order.push(k); });
+  state.colOrder=order;
+  return order;
+}
+function colW(k){
+  if(state.colWidth && state.colWidth[k]) return state.colWidth[k];
+  if(k===state.map.comments) return 220;
+  if(k===state.map.date) return 104;
+  if(k===state.map.id) return 72;
+  if(k===state.map.resight) return 84;
+  if(k===state.map.depth) return 80;
+  if(k===state.map.lat||k===state.map.lng) return 112;
+  return 120;
+}
+function moveColumn(from,to){
+  if(from===to) return;
+  let o=displayKeys().slice();
+  o.splice(o.indexOf(from),1);          // remove dragged
+  o.splice(o.indexOf(to),0,from);       // drop it just before the target
+  state.colOrder=o; renderGrid(); persist();
+}
+
+/* ============================================================================
+   DATE PARSING + SORT
+   ========================================================================== */
+function parseDate(s){
+  if(s===null||s===undefined) return NaN;
+  s=String(s).trim(); if(!s) return NaN;
+  let m;
+  if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)) return Date.UTC(+m[1],+m[2]-1,+m[3]);
+  if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)){ let y=+m[3]; if(y<100) y+=2000; return Date.UTC(y,(+m[2])-1,+m[1]); }
+  if(m=s.match(/^(\d{1,2})\/(\d{4})$/)) return Date.UTC(+m[2],(+m[1])-1,1);
+  const t=Date.parse(s); return isNaN(t)?NaN:t;
+}
+function setSort(col){
+  if(state.sort.col===col) state.sort.dir*=-1;
+  else state.sort={col, dir:(col===state.map.date?-1:1)}; // dates default newest-first
+  renderGrid();
+}
+function displayRows(){
+  const q=document.getElementById('search').value.trim().toLowerCase();
+  let rows=state.rows.filter(r=>!q || state.headers.some(h=>String(r[h]).toLowerCase().includes(q)));
+  const col=state.sort.col;
+  if(col){
+    const isDate=(col===state.map.date);
+    const isNum=[state.map.lat,state.map.lng,state.map.depth,state.map.count].includes(col);
+    rows=rows.slice().sort((a,b)=>{
+      let av,bv;
+      if(isDate){av=parseDate(a[col]);bv=parseDate(b[col]);}
+      else if(isNum){av=parseFloat(a[col]);bv=parseFloat(b[col]);}
+      else{av=String(a[col]??'').toLowerCase();bv=String(b[col]??'').toLowerCase();}
+      const an=(av===''||av==null||(typeof av==='number'&&isNaN(av)));
+      const bn=(bv===''||bv==null||(typeof bv==='number'&&isNaN(bv)));
+      if(an&&bn)return 0; if(an)return 1; if(bn)return -1;
+      if(av<bv)return -state.sort.dir; if(av>bv)return state.sort.dir; return 0;
+    });
+  }
+  return rows;
+}
+
+/* ============================================================================
+   DATA LOAD
+   ========================================================================== */
+function ingest(parsed,fit){
+  const headers = parsed.meta.fields ? parsed.meta.fields.slice() : Object.keys(parsed.data[0]||{});
+  state.headers = headers;
+  state.rows = parsed.data
+    .filter(r=>Object.values(r).some(v=>String(v).trim()!==''))
+    .map(r=>{ const o={_id:uid()}; headers.forEach(h=>o[h]=r[h]??''); return o; });
+  autoMap();
+  // freeze each row's original key BEFORE any edits, so write-back matches the
+  // correct Sightings row even if the user later edits the date or coordinates
+  state.rows.forEach(snapshotKey);
+  state.dirty.clear();
+  if(state.map.date) state.sort={col:state.map.date,dir:-1}; // newest first by default
+  renderAll(); persist(); updateSaveBar();
+  toast(`Loaded ${state.rows.length} records`);
+  if(fit!==false) fitToData();
+}
+function fitToData(){
+  const pts=state.rows.map(r=>[parseFloat(r[state.map.lat]),parseFloat(r[state.map.lng])]).filter(p=>isFinite(p[0])&&isFinite(p[1]));
+  if(pts.length>1) map.fitBounds(pts,{padding:[40,40],maxZoom:15});
+}
+function loadFromSheet(silent){
+  const url=CONFIG.csvUrl||`https://docs.google.com/spreadsheets/d/${CONFIG.sheetId}/gviz/tq?tqx=out:csv&gid=${CONFIG.sheetGid}`;
+  if(!silent) toast('Fetching sheet…');
+  return fetch(url)
+    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+    .then(txt=>{ if(/^\s*</.test(txt)) throw new Error('not-public');
+      ingest(Papa.parse(txt,{header:true,skipEmptyLines:true}), false); setConn(true); return true; });
+}
+function loadErrorMsg(err){
+  const m=String(err&&err.message||err);
+  if(m==='not-public') return 'Sheet returned a sign-in page — set sharing to “Anyone with the link → Viewer”';
+  if(/^HTTP/.test(m))   return 'Sheet fetch failed ('+m+') — check the gid and sharing';
+  return 'Can’t reach Google from here — if you opened the file directly, serve it over http:// (e.g. python3 -m http.server)';
+}
+document.getElementById('btnLoadSheet').addEventListener('click',()=>{
+  loadFromSheet().catch(err=>{ setConn(false, loadErrorMsg(err)); toast(loadErrorMsg(err)); console.warn('Sheet load failed:',err); });
+});
+function setConn(ok, reason){
+  const b=document.getElementById('connbanner'); if(!b) return;
+  if(ok){ b.classList.remove('show'); return; }
+  b.querySelector('.cb-msg').textContent = reason || 'Not connected to the Sheet — showing cached data. Edits are local only.';
+  b.classList.add('show');
+}
+document.getElementById('connRetry').addEventListener('click',()=>{
+  toast('Reconnecting…');
+  loadFromSheet().then(()=>toast('Connected — data refreshed'))
+    .catch(err=>{ setConn(false, loadErrorMsg(err)); toast(loadErrorMsg(err)); });
+});
+
+/* ============================================================================
+   GRID
+   ========================================================================== */
+const gridWrap=document.getElementById('gridWrap');
+function numericRange(col){ let lo=Infinity,hi=-Infinity;
+  state.rows.forEach(r=>{const v=parseFloat(r[col]);if(!isNaN(v)){lo=Math.min(lo,v);hi=Math.max(hi,v);}});
+  return (lo===Infinity)?null:{lo,hi}; }
+function renderGrid(){
+  if(!state.headers.length){ renderEmpty(); return; }
+  ensureComments();
+  const keys=displayKeys();
+  const dRange=state.map.depth?numericRange(state.map.depth):null;
+  const tbl=document.createElement('table'); tbl.className='grid'; tbl.style.tableLayout='fixed';
+
+  // colgroup drives per-column widths
+  const cg=document.createElement('colgroup');
+  const colEls={};
+  const ci=document.createElement('col'); ci.style.width='34px'; cg.appendChild(ci);
+  const ca=document.createElement('col'); ca.style.width='48px'; cg.appendChild(ca);
+  keys.forEach(k=>{ const c=document.createElement('col'); c.style.width=colW(k)+'px'; cg.appendChild(c); colEls[k]=c; });
+  tbl.appendChild(cg);
+  tbl.style.width=(34+48+keys.reduce((a,k)=>a+colW(k),0))+'px';
+
+  const thead=document.createElement('thead'); const htr=document.createElement('tr');
+  htr.innerHTML='<th class="col-idx">#</th><th class="col-act"></th>';
+  keys.forEach(h=>{
+    const th=document.createElement('th'); th.dataset.col=h; th.draggable=true;
+    const lab=document.createElement('span'); lab.className='thlab'; lab.textContent=colLabel(h); th.appendChild(lab);
+    const tags=[]; if(h===state.map.lat)tags.push('LAT'); if(h===state.map.lng)tags.push('LNG');
+    tags.forEach(t=>{const s=document.createElement('span');s.className='maptag';s.textContent=t;th.appendChild(s);});
+    if(state.sort.col===h){ const c=document.createElement('span'); c.className='caret'; c.textContent=state.sort.dir<0?'▼':'▲'; th.appendChild(c); }
+
+    // sort on click (ignore clicks that originate on the resize grip)
+    th.addEventListener('click',e=>{ if(e.target.classList.contains('col-resize')) return; if(th._dragged){ th._dragged=false; return; } setSort(h); });
+
+    // reorder via drag
+    th.addEventListener('dragstart',e=>{ th._dragged=true; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',h); th.classList.add('drag'); });
+    th.addEventListener('dragend',()=>th.classList.remove('drag'));
+    th.addEventListener('dragover',e=>{ e.preventDefault(); th.classList.add('drop-target'); });
+    th.addEventListener('dragleave',()=>th.classList.remove('drop-target'));
+    th.addEventListener('drop',e=>{ e.preventDefault(); th.classList.remove('drop-target'); const from=e.dataTransfer.getData('text/plain'); if(from) moveColumn(from,h); });
+
+    // resize grip
+    const grip=document.createElement('div'); grip.className='col-resize';
+    grip.addEventListener('mousedown',e=>{
+      e.preventDefault(); e.stopPropagation();
+      th.draggable=false;                         // don't start a column-drag while resizing
+      const startX=e.clientX, startW=colW(h), col=colEls[h];
+      const onMove=ev=>{ const w=Math.max(40,startW+(ev.clientX-startX)); state.colWidth[h]=w; if(col) col.style.width=w+'px'; tbl.style.width=(34+48+keys.reduce((a,k)=>a+colW(k),0))+'px'; };
+      const onUp=()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); th.draggable=true; persist(); };
+      document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
+    });
+    th.appendChild(grip);
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr); tbl.appendChild(thead);
+
+  const tbody=document.createElement('tbody');
+  displayRows().forEach((row,i)=>{
+    const tr=document.createElement('tr'); tr.dataset.id=row._id;
+    if(row._id===state.selId) tr.classList.add('sel');
+    if(state.dirty.has(row._id)) tr.classList.add('dirty');
+    const tdIdx=document.createElement('td'); tdIdx.className='col-idx'; tdIdx.textContent=i+1; tr.appendChild(tdIdx);
+    const tdAct=document.createElement('td'); tdAct.className='col-act';
+    const hasGeo=isFinite(parseFloat(row[state.map.lat]))&&isFinite(parseFloat(row[state.map.lng]));
+    tdAct.innerHTML=`<span class="dragpin ${hasGeo?'has':''}" title="${hasGeo?'mapped':'no coords'}">●</span><button class="rowdel" title="Delete this sighting">✕</button>`;
+    tdAct.querySelector('.rowdel').addEventListener('click',ev=>{ ev.stopPropagation(); askDelete(row._id); });
+    tr.appendChild(tdAct);
+    keys.forEach(h=>{
+      const td=document.createElement('td');
+      // resight → a flag checkbox rather than a free-text cell
+      if(h===state.map.resight){
+        td.className='flagcell';
+        const cb=document.createElement('input'); cb.type='checkbox';
+        cb.checked=isResighted(row[h]); cb.dataset.col=h; cb.dataset.id=row._id;
+        cb.title='Re-sight of a previously logged animal';
+        cb.addEventListener('change',()=>{
+          row[h]=cb.checked?'Y':'';
+          td.classList.toggle('on',cb.checked);
+          markDirty(row._id); refreshMarker(row); persist();
+        });
+        if(cb.checked) td.classList.add('on');
+        td.appendChild(cb);
+        tr.appendChild(td);
+        return;
+      }
+      const isNum=(h===state.map.lat||h===state.map.lng||h===state.map.depth||h===state.map.count);
+      if(isNum) td.className='num';
+      if((h===state.map.lat||h===state.map.lng)&&row[h]!==''&&!isFinite(parseFloat(row[h]))) td.classList.add('coordbad');
+      const inp=document.createElement('input'); inp.value=row[h]??''; inp.dataset.col=h; inp.dataset.id=row._id;
+      td.appendChild(inp);
+      if(h===state.map.depth && dRange){
+        const v=parseFloat(row[h]);
+        if(!isNaN(v)&&dRange.hi>dRange.lo){
+          td.classList.add('depthcell');
+          const bar=document.createElement('div'); bar.className='depthbar';
+          bar.style.width=(8+90*Math.abs(v-dRange.lo)/Math.abs(dRange.hi-dRange.lo))+'%';
+          td.appendChild(bar);
+        }
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody); gridWrap.innerHTML=''; gridWrap.appendChild(tbl); wireGrid();
+}
+function renderEmpty(){
+  gridWrap.innerHTML=`<div class="empty">
+    <b>No sightings loaded</b>
+    Reading your <span style="color:var(--isobath)">map_latest</span> tab…
+    <div class="row"><button class="btn primary" id="emptyLoad">Reload from Sheet</button></div>
+  </div>`;
+  document.getElementById('emptyLoad').onclick=()=>loadFromSheet().catch(()=>toast('Sheet not reachable — share it “anyone with link”'));
+}
+function wireGrid(){
+  gridWrap.querySelectorAll('input').forEach(inp=>{
+    if(inp.type==='checkbox') return;          // flag cells handle their own change
+    inp.addEventListener('input',()=>{
+      const row=state.rows.find(r=>r._id===inp.dataset.id); if(!row) return;
+      row[inp.dataset.col]=inp.value;
+      markDirty(row._id);
+      if([state.map.lat,state.map.lng,state.map.label,state.map.id,state.map.date,state.map.depth,state.map.sex].includes(inp.dataset.col)){
+        refreshMarker(row); updateStats(); debouncedRerender();
+      }
+      persist();
+    });
+    inp.addEventListener('focus',()=>selectRow(inp.dataset.id,false));
+  });
+  gridWrap.querySelectorAll('tbody tr').forEach(tr=>{
+    tr.addEventListener('click',e=>{ if(e.target.tagName!=='INPUT') selectRow(tr.dataset.id,true); });
+  });
+}
+let reTimer=null;
+function debouncedRerender(){ clearTimeout(reTimer); reTimer=setTimeout(renderGrid,600); }
+
+/* ============================================================================
+   MARKERS + SYNC
+   ========================================================================== */
+function var_(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function sexColor(row){
+  const raw=(row[state.map.sex]||row[state.map.id]||'').toString().toUpperCase();
+  const last=raw.slice(-1);
+  if(last==='F'||/FEMALE/.test(raw)) return var_('--coral');
+  if(last==='M'||/MALE/.test(raw))   return var_('--isobath');
+  if(last==='J'||/JUV/.test(raw))    return var_('--gold');
+  return var_('--slate');
+}
+function labelFor(row){
+  if(state.map.label && row[state.map.label]) return row[state.map.label];
+  const parts=[row[state.map.id],row[state.map.date],row[state.map.depth]?row[state.map.depth]+'m':null,
+    row[state.map.count]?row[state.map.count]+'×':null].filter(Boolean);
+  return parts.join(' · ') || '(unnamed)';
+}
+function refreshMarker(row){
+  const lat=parseFloat(row[state.map.lat]), lng=parseFloat(row[state.map.lng]);
+  if(row._marker){ state.markerLayer.removeLayer(row._marker); row._marker=null; }
+  if(!isFinite(lat)||!isFinite(lng)) return;
+  const sel=row._id===state.selId || (state.specSel&&state.specSel.has(row._id));
+  const m=L.circleMarker([lat,lng],{
+    radius:sel?8:5.5, color:sel?var_('--coral'):'#06141d', weight:sel?2.5:1.5,
+    fillColor:sel?var_('--coral'):sexColor(row), fillOpacity:.95
+  });
+  m.bindTooltip(labelFor(row),{className:'sd-label',direction:'top',offset:[0,-6]});
+  m.on('click',()=>selectRow(row._id,true,true));
+  m.addTo(state.markerLayer); row._marker=m;
+}
+function renderMarkers(){ state.markerLayer.clearLayers(); state.rows.forEach(r=>{r._marker=null;refreshMarker(r);}); }
+function selectRow(id,scroll,fromMap){
+  state.selId=id;
+  if(state.specSel&&state.specSel.size){ state.specSel.clear(); specWrap.querySelectorAll('.spec.sel').forEach(x=>x.classList.remove('sel')); }
+  gridWrap.querySelectorAll('tbody tr').forEach(tr=>tr.classList.toggle('sel',tr.dataset.id===id));
+  state.rows.forEach(r=>{ if(r._id===id||r._marker) refreshMarker(r); });
+  const row=state.rows.find(r=>r._id===id);
+  if(row){
+    const lat=parseFloat(row[state.map.lat]),lng=parseFloat(row[state.map.lng]);
+    if(isFinite(lat)&&isFinite(lng)){ if(fromMap) map.panTo([lat,lng],{animate:true}); row._marker&&row._marker.openTooltip(); }
+  }
+  if(scroll){
+    const tr=gridWrap.querySelector(`tr[data-id="${id}"]`); tr&&tr.scrollIntoView({block:'nearest',behavior:'smooth'});
+    if(fromMap && window.innerWidth<=820) setView('data');
+  }
+}
+
+/* ============================================================================
+   SPECIMENS TAB  (one entry per animal, click → highlight its dot(s))
+   ========================================================================== */
+const specWrap=document.getElementById('specWrap');
+function buildSpecimens(){
+  const idCol=state.map.id; const groups=new Map();
+  state.rows.forEach(r=>{
+    const id=idCol?String(r[idCol]??'').trim():'';
+    const key=id||('unID:'+r._id);
+    if(!groups.has(key)) groups.set(key,{key,id:id||'unID',rows:[]});
+    groups.get(key).rows.push(r);
+  });
+  return [...groups.values()];
+}
+function renderSpecimens(){
+  const q=document.getElementById('search').value.trim().toLowerCase();
+  let groups=buildSpecimens();
+  if(q) groups=groups.filter(g=>g.rows.some(r=>state.headers.some(h=>String(r[h]).toLowerCase().includes(q))));
+  groups.sort((a,b)=>String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
+  if(!groups.length){ specWrap.innerHTML='<div class="empty">No specimens to show</div>'; return; }
+  specWrap.innerHTML='';
+  groups.forEach(g=>{
+    const first=g.rows[0];
+    const sx=state.map.sex?(first[state.map.sex]||''):'';
+    const dates=g.rows.map(r=>r[state.map.date]).filter(Boolean);
+    const depth=state.map.depth?(first[state.map.depth]||''):'';
+    const mapped=g.rows.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
+    const el=document.createElement('div'); el.className='spec'; el.dataset.spec=g.key;
+    el.innerHTML=`<span class="dot" style="background:${sexColor(first)}"></span>`
+      +`<span class="sid">${g.id}</span>`
+      +`<span class="meta"><span>${sx||'—'}</span>${dates.length?`<span>${dates[dates.length-1]}</span>`:''}${depth?`<span>${depth} m</span>`:''}</span>`
+      +`<span class="cnt">${mapped} dot${mapped===1?'':'s'}</span>`;
+    el.addEventListener('click',()=>highlightSpecimen(g,el));
+    specWrap.appendChild(el);
+  });
+}
+function highlightSpecimen(g,el){
+  specWrap.querySelectorAll('.spec').forEach(x=>x.classList.remove('sel'));
+  if(el) el.classList.add('sel');
+  state.selId=null;
+  state.specSel=new Set(g.rows.map(r=>r._id));
+  renderMarkers();
+  const pts=g.rows.map(r=>[parseFloat(r[state.map.lat]),parseFloat(r[state.map.lng])]).filter(p=>isFinite(p[0])&&isFinite(p[1]));
+  if(pts.length===1) map.setView(pts[0],Math.max(map.getZoom(),16),{animate:true});
+  else if(pts.length>1) map.fitBounds(pts,{padding:[60,60],maxZoom:16});
+  g.rows.forEach(r=>{ if(r._marker) r._marker.openTooltip(); });
+  if(window.innerWidth<=820) setView('map');
+}
+function currentTab(){ const a=document.querySelector('.tab.active'); return a?a.dataset.tab:'sightings'; }
+function setTab(t){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
+  if(t==='specimens'){ gridWrap.style.display='none'; specWrap.style.display='block'; renderSpecimens(); }
+  else {
+    specWrap.style.display='none'; gridWrap.style.display='block';
+    if(state.specSel&&state.specSel.size){ state.specSel.clear(); renderMarkers(); }
+  }
+}
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
+
+/* ============================================================================
+   NEW-SIGHTING MODAL  (drop / drag / commit)
+   ========================================================================== */
+const smodal=document.getElementById('smodal');
+const draft={ marker:null };
+const draftIcon=L.divIcon({className:'',html:'<div class="draft-pin"></div>',iconSize:[18,18],iconAnchor:[9,9]});
+const $=id=>document.getElementById(id);
+function today(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function toISO(s){
+  if(!s) return '';
+  s=String(s).trim(); let m,y,mo,d;
+  if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)){y=+m[1];mo=+m[2];d=+m[3];}
+  else if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)){d=+m[1];mo=+m[2];y=+m[3];if(y<100)y+=2000;}
+  else if(m=s.match(/^(\d{1,2})\/(\d{4})$/)){d=1;mo=+m[1];y=+m[2];}
+  else return s;
+  const p=n=>String(n).padStart(2,'0');
+  return `${y}-${p(mo)}-${p(d)}`;
+}
+
+function openSighting(){
+  $('smDate').value=today(); $('smDepth').value=''; $('smId').value=''; $('smCount').value='1';
+  $('smSex').value='Unknown'; $('smSite').value=''; $('smComments').value='';
+  $('smPos').value='GPS'; $('smEggs').checked=false; $('smResight').checked=false;
+  $('smObserver').value='Marco';
+  $('smLat').value=''; $('smLng').value=''; setLocHint();
+  removeDraft();
+  smodal.classList.add('show');
+  if(window.innerWidth<=820) setView('data');
+  setTimeout(()=>$('smId').focus(),50);
+}
+function closeSighting(){ smodal.classList.remove('show'); removeDraft(); cancelDrop(); }
+function setLocHint(){
+  const lat=$('smLat').value.trim(), lng=$('smLng').value.trim(), el=$('smLocHint');
+  if(lat&&lng && isFinite(+lat)&&isFinite(+lng)){ el.textContent=(+lat).toFixed(5)+', '+(+lng).toFixed(5); el.classList.add('set'); }
+  else{ el.textContent='no location set'; el.classList.remove('set'); }
+}
+function removeDraft(){ if(draft.marker){ map.removeLayer(draft.marker); draft.marker=null; } }
+function ensureDraft(lat,lng){
+  if(!draft.marker){
+    draft.marker=L.marker([lat,lng],{draggable:true,icon:draftIcon,zIndexOffset:1000}).addTo(map);
+    draft.marker.on('drag',()=>{ const p=draft.marker.getLatLng(); $('smLat').value=p.lat.toFixed(6); $('smLng').value=p.lng.toFixed(6); setLocHint(); });
+  } else draft.marker.setLatLng([lat,lng]);
+}
+function placeDraft(lat,lng){               // called by the map-click handler in pick mode
+  $('smLat').value=lat.toFixed(6); $('smLng').value=lng.toFixed(6); setLocHint();
+  $('smPos').value='estimated (map)';       // map-placed → estimated
+  ensureDraft(lat,lng); cancelDrop();
+  if(window.innerWidth<=820) setView('data');
+  toast('Point placed — drag to fine-tune');
+}
+function startDrop(){
+  if(!smodal.classList.contains('show')) return;
+  state.pickMode=true; $('smDrop').textContent='Tap the map…';
+  if(window.innerWidth<=820){ setView('map'); $('dropbanner').classList.add('show'); }
+  else toast('Click the map to place the point');
+}
+function cancelDrop(){
+  state.pickMode=false; $('dropbanner').classList.remove('show');
+  const b=$('smDrop'); if(b) b.innerHTML='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Drop on map';
+}
+/* typing coords moves the pin too */
+['smLat','smLng'].forEach(id=>$(id).addEventListener('input',()=>{
+  setLocHint();
+  const lat=parseFloat($('smLat').value), lng=parseFloat($('smLng').value);
+  if(isFinite(lat)&&isFinite(lng)) ensureDraft(lat,lng);
+}));
+$('btnNew').addEventListener('click',openSighting);
+$('smDrop').addEventListener('click',startDrop);
+$('dropCancel').addEventListener('click',()=>{ cancelDrop(); if(window.innerWidth<=820) setView('data'); });
+$('smClose').addEventListener('click',closeSighting);
+$('smCancel').addEventListener('click',closeSighting);
+$('smCommit').addEventListener('click',commitSighting);
+
+/* ---- delete a record (with confirmation) ---- */
+let pendingDelete=null;
+function askDelete(id){
+  const row=state.rows.find(r=>r._id===id); if(!row) return;
+  pendingDelete=id;
+  const label=labelFor(row);
+  $('cmText').innerHTML=`Remove <b style="color:var(--sand)">${label}</b> from the list and the map`
+    + (CONFIG.saveEndpoint?` and delete the matching row from the <b style="color:var(--sand)">Sightings</b> sheet`:'')
+    + `? This can't be undone.`;
+  $('cscrim').classList.add('show'); $('cmodal').classList.add('show');
+}
+function closeConfirm(){ pendingDelete=null; $('cscrim').classList.remove('show'); $('cmodal').classList.remove('show'); }
+function doDelete(){
+  const id=pendingDelete; if(!id){ closeConfirm(); return; }
+  const row=state.rows.find(r=>r._id===id);
+  if(row){
+    if(row._marker) state.markerLayer.removeLayer(row._marker);
+    const match={
+      specimen_id: state.map.id?row[state.map.id]:'',
+      date:        state.map.date?row[state.map.date]:'',
+      lat:         state.map.lat?row[state.map.lat]:'',
+      lon:         state.map.lng?row[state.map.lng]:''
+    };
+    state.rows=state.rows.filter(r=>r._id!==id);
+    if(state.selId===id) state.selId=null;
+    renderAll(); persist();
+    if(CONFIG.saveEndpoint && (match.lat!=='' && match.lon!=='')){
+      fetch(CONFIG.saveEndpoint,{method:'POST',mode:'no-cors',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({action:'delete',match})})
+        .then(()=>toast('Deleted — sheet updating…'))
+        .catch(()=>toast('Removed locally — sheet delete may have failed'));
+    } else {
+      toast('Removed from the list');
+    }
+  }
+  closeConfirm();
+}
+$('cmCancel').addEventListener('click',closeConfirm);
+$('cmConfirm').addEventListener('click',doDelete);
+$('cscrim').addEventListener('click',()=>{ closeConfirm(); closeSave(); });
+
+function gatherRecord(){
+  return {
+    date:toISO($('smDate').value.trim()), lat:$('smLat').value.trim(), lng:$('smLng').value.trim(),
+    depth:$('smDepth').value.trim(), id:$('smId').value.trim(), count:$('smCount').value.trim(),
+    sex:$('smSex').value, site:$('smSite').value.trim(),
+    comments:$('smComments').value.trim(), observer:$('smObserver').value,
+    eggs:($('smEggs').checked?'Y':''), resight:($('smResight').checked?'Y':''),
+    position:$('smPos').value
+  };
+}
+function appendLocalRow(rec){
+  if(!state.headers.length){ state.headers=CONFIG.defaultHeaders.slice(); autoMap(); }
+  const o={_id:uid()}; state.headers.forEach(h=>o[h]='');
+  const set=(col,val)=>{ if(col&&val!==''&&val!=null) o[col]=val; };
+  set(state.map.date,rec.date); set(state.map.lat,rec.lat); set(state.map.lng,rec.lng);
+  set(state.map.depth,rec.depth); set(state.map.id,rec.id); set(state.map.count,rec.count);
+  set(state.map.sex,rec.sex); set(state.map.site,rec.site);
+  set(state.map.comments,rec.comments); set(state.map.observer,rec.observer);
+  set(state.map.eggs,rec.eggs); set(state.map.resight,rec.resight); set(state.map.position,rec.position);
+  snapshotKey(o);
+  state.rows.push(o); renderAll(); persist(); selectRow(o._id,true,true);
+}
+function commitSighting(){
+  const rec=gatherRecord();
+  if(!rec.date){ toast('Add a date first'); $('smDate').focus(); return; }
+  appendLocalRow(rec);                       // optimistic — pin shows immediately
+  if(CONFIG.saveEndpoint){
+    fetch(CONFIG.saveEndpoint,{method:'POST',mode:'no-cors',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'append',record:rec})})
+      .then(()=>{ toast('Committed to Sheet — refreshing…'); setTimeout(()=>loadFromSheet(true).catch(()=>{}),2500); })
+      .catch(()=>toast('Commit may have failed — check the Sheet'));
+  } else {
+    toast('Added locally — set CONFIG.saveEndpoint to write to the Sheet');
+  }
+  closeSighting();
+}
+
+/* ============================================================================
+   EXPORT
+   ========================================================================== */
+document.getElementById('btnExport').addEventListener('click',()=>{
+  if(!state.rows.length){ toast('Nothing to export'); return; }
+  const csv=Papa.unparse({fields:state.headers,data:state.rows.map(r=>state.headers.map(h=>r[h]??''))});
+  const d=new Date(), stamp=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`map_latest_edited_${stamp}.csv`; a.click(); toast('Exported CSV');
+});
+
+/* ============================================================================
+   SAVE CHANGES  (in-grid edits → confirm → write back to the Sightings tab)
+   Inline edits are held locally and flagged "unsaved". Nothing reaches the
+   Sheet until you press Save changes and confirm. Each edited row is matched
+   to its source row in 'Sightings' by its ORIGINAL key (ID + date + coords),
+   captured at load — so editing those fields still updates the right row.
+   ========================================================================== */
+function markDirty(id){ state.dirty.add(id); updateSaveBar(); }
+function updateSaveBar(){
+  const bar=document.getElementById('saveBar');
+  const n=state.dirty.size;
+  document.getElementById('saveCount').textContent=n;
+  bar.classList.toggle('show', n>0);
+}
+function changedRows(){ return state.rows.filter(r=>state.dirty.has(r._id)); }
+
+document.getElementById('btnSave').addEventListener('click',()=>{
+  const rows=changedRows();
+  if(!rows.length){ toast('No unsaved changes'); return; }
+  const list=rows.slice(0,8).map(r=>'· '+labelFor(r)).join('<br>');
+  const more=rows.length>8?`<br>…and ${rows.length-8} more`:'';
+  const target=CONFIG.saveEndpoint
+    ? `Write ${rows.length} edited ${rows.length===1?'row':'rows'} back to the <b style="color:var(--sand)">Sightings</b> tab?`
+    : `Set CONFIG.saveEndpoint to write to the Sheet. For now this only confirms ${rows.length} local ${rows.length===1?'edit':'edits'}.`;
+  document.getElementById('svText').innerHTML=`${target}<div class="svlist">${list}${more}</div>`;
+  document.getElementById('cscrim').classList.add('show');
+  document.getElementById('svmodal').classList.add('show');
+});
+function closeSave(){ document.getElementById('cscrim').classList.remove('show'); document.getElementById('svmodal').classList.remove('show'); }
+function doSave(){
+  const rows=changedRows();
+  closeSave();
+  if(!rows.length) return;
+  if(!CONFIG.saveEndpoint){
+    state.dirty.clear(); renderGrid(); updateSaveBar();
+    toast('Confirmed locally — no Sheet endpoint set'); return;
+  }
+  const updates=rows.map(r=>({
+    match:r._key||{specimen_id:'',date:'',lat:'',lon:''},
+    values:{
+      specimen_id: state.map.id      ?r[state.map.id]      :undefined,
+      date:        state.map.date    ?r[state.map.date]    :undefined,
+      lat:         state.map.lat     ?r[state.map.lat]     :undefined,
+      lon:         state.map.lng     ?r[state.map.lng]     :undefined,
+      depth:       state.map.depth   ?r[state.map.depth]   :undefined,
+      count:       state.map.count   ?r[state.map.count]   :undefined,
+      sex:         state.map.sex     ?r[state.map.sex]     :undefined,
+      site:        state.map.site    ?r[state.map.site]    :undefined,
+      comments:    state.map.comments?r[state.map.comments]:undefined,
+      observer:    state.map.observer?r[state.map.observer]:undefined,
+      resight:     state.map.resight ?r[state.map.resight] :undefined
+    }
+  }));
+  toast(`Saving ${rows.length} ${rows.length===1?'row':'rows'}…`);
+  fetch(CONFIG.saveEndpoint,{method:'POST',mode:'no-cors',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:'update',updates})})
+    .then(()=>{
+      state.dirty.clear(); updateSaveBar(); renderGrid();
+      toast('Sent — reloading to confirm…');
+      setTimeout(()=>loadFromSheet(true).catch(()=>{}),2500);
+    })
+    .catch(()=>toast('Save may have failed — check the Sheet'));
+}
+document.getElementById('svCancel').addEventListener('click',closeSave);
+document.getElementById('svConfirm').addEventListener('click',doSave);
+
+/* ============================================================================
+   STATS / ORCHESTRATION / PERSISTENCE
+   ========================================================================== */
+function updateStats(){
+  const mapped=state.rows.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
+  const col=state.rows.filter(r=>parseInt(r[state.map.count])>=2).length;
+  document.getElementById('statTotal').textContent=state.rows.length;
+  document.getElementById('statMapped').textContent=mapped;
+  document.getElementById('statColonies').textContent=col;
+}
+function renderAll(){ renderGrid(); renderMarkers(); updateStats(); if(currentTab()==='specimens') renderSpecimens(); }
+function persist(){
+  try{ localStorage.setItem('wsd_editor',JSON.stringify({
+    headers:state.headers, map:state.map, sort:state.sort,
+    colOrder:state.colOrder, colWidth:state.colWidth, dirty:[...state.dirty],
+    rows:state.rows.map(r=>{ const {_marker,...rest}=r; return rest; })
+  })); }catch(e){}
+}
+function restore(){
+  try{ const s=JSON.parse(localStorage.getItem('wsd_editor')||'null');
+    if(s && s.headers && s.headers.length){
+      state.headers=s.headers; state.map=Object.assign(state.map,s.map); if(s.sort) state.sort=s.sort;
+      if(s.colOrder) state.colOrder=s.colOrder; if(s.colWidth) state.colWidth=s.colWidth;
+      state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
+      state.rows.forEach(r=>{ if(!r._key) snapshotKey(r); });
+      if(s.dirty) state.dirty=new Set(s.dirty);
+      renderAll(); updateSaveBar(); return true;
+    }
+  }catch(e){}
+  return false;
+}
+document.getElementById('search').addEventListener('input',()=>{ renderGrid(); if(currentTab()==='specimens') renderSpecimens(); });
+
+/* ============================================================================
+   SPLITTER + MOBILE TOGGLE + KEYS
+   ========================================================================== */
+const splitter=document.getElementById('splitter');
+let dragging=false;
+splitter.addEventListener('mousedown',()=>{dragging=true;splitter.classList.add('drag');document.body.style.userSelect='none';});
+window.addEventListener('mousemove',e=>{
+  if(!dragging) return;
+  const pct=Math.min(72,Math.max(22,(e.clientX/window.innerWidth)*100));
+  document.documentElement.style.setProperty('--left-w',pct+'%');
+});
+window.addEventListener('mouseup',()=>{ if(dragging){dragging=false;splitter.classList.remove('drag');document.body.style.userSelect='';map.invalidateSize();bathyRefresh();}});
+function setView(v){
+  document.body.classList.remove('view-map','view-data');
+  document.body.classList.add('view-'+v);
+  document.getElementById('viewToggle').textContent = v==='map'?'Show data':'Show map';
+  if(v==='map') setTimeout(()=>{map.invalidateSize();bathyRefresh();},50);
+}
+document.getElementById('viewToggle').addEventListener('click',()=>{
+  setView(document.body.classList.contains('view-map')?'data':'map');
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if($('svmodal').classList.contains('show')){ closeSave(); return; }
+    if($('cmodal').classList.contains('show')){ closeConfirm(); return; }
+    if(state.pickMode){ cancelDrop(); return; }
+    if(smodal.classList.contains('show')){ closeSighting(); return; }
+  }
+});
+
+/* ============================================================================
+   BOOT — read live from the Sheet, fall back to local cache
+   ========================================================================== */
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2200); }
+renderEmpty();
+loadFromSheet(true).catch(err=>{
+  console.warn('Online load failed, falling back to cache:',err);
+  const cached=restore();
+  if(cached) setConn(false, 'Showing cached data — not connected. '+loadErrorMsg(err)+'. Edits are local only until you reconnect.');
+  else { renderEmpty(); setConn(false, loadErrorMsg(err)); toast(loadErrorMsg(err)); }
+});
+setTimeout(()=>{map.invalidateSize();bathyRefresh();},200);
+</script>
+
+<!--  ===========================================================================
+  APPS SCRIPT WEB APP — paste into your bound script, deploy as Web App
+  (Execute as "Me", Access "Anyone"), then put the /exec URL in CONFIG.saveEndpoint.
+  Re-deploy (Manage deployments → edit → new version) after pasting this, or the
+  new 'update' action won't exist on the endpoint.
+
+  All actions read/write the SOURCE 'Sightings' tab — never the computed
+  map_latest view (that one is regenerated by formula and can't be written to).
+
+    append : {action:'append', record:{...}}
+    update : {action:'update', updates:[{match:{specimen_id,date,lat,lon}, values:{...}}]}
+    delete : {action:'delete', match:{specimen_id,date,lat,lon}}
+
+  Header matching is by regex (FIELD_MATCH). If your Sightings tab has no
+  'resight' column yet, add one (any header containing "resight") so the flag
+  has somewhere to land — otherwise resight edits are silently dropped.
+
+  var SHEET_ID = '1UnTxSU3phEKkjEbf_bDGBPRh-xYH4Cm1vH5zcg36t2Y';
+  var FIELD_MATCH = {
+    specimen_id:/id|specimen|tag/i, date:/date/i, lat:/lat/i, lon:/(lng|lon)/i,
+    depth:/depth|_m$|^m$/i, count:/count|qty|number/i, sex:/sex|gender/i,
+    site:/site|location/i, comments:/comment|note|remark/i,
+    observer:/observ|diver|recorder|by/i, resight:/resight|re-?sight/i
+  };
+  function colIndex(headers, key){
+    for (var i=0;i<headers.length;i++){ if (FIELD_MATCH[key] && FIELD_MATCH[key].test(headers[i])) return i; }
+    return -1;
+  }
+  function pad(n){ n=+n; return (n<10?'0':'')+n; }
+  function canonDate(v){
+    if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var s=String(v).trim(); if(!s) return ''; var m;
+    if (m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)) return m[1]+'-'+pad(m[2])+'-'+pad(m[3]);
+    if (m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)){ var y=+m[3]; if(y<100)y+=2000; return y+'-'+pad(m[2])+'-'+pad(m[1]); }
+    if (m=s.match(/^(\d{1,2})\/(\d{4})$/)) return m[2]+'-'+pad(m[1])+'-01';
+    var d=new Date(s); return isNaN(d.getTime())?s:Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  function canonNum(v){ var f=parseFloat(v); return isNaN(f)?null:Math.round(f*1e5)/1e5; }
+  function canonId(v){ return String(v).trim().toUpperCase(); }
+  // match on whichever key fields are provided; types are normalised first so a
+  // Date cell vs a "23/12/24" string, or -33.79713 vs -33.797130, still agree
+  function rowMatches(rowVals, headers, match){
+    var ok=true, used=false;
+    function need(k, eq){
+      var want=match[k]; if(want==null || String(want).trim()==='') return;
+      var ci=colIndex(headers,k); if(ci<0) return;
+      used=true; if(!eq(rowVals[ci], want)) ok=false;
+    }
+    need('specimen_id', function(a,b){ return canonId(a)===canonId(b); });
+    need('date',        function(a,b){ return canonDate(a)===canonDate(b); });
+    need('lat',         function(a,b){ var x=canonNum(a),y=canonNum(b); return x!=null&&y!=null&&Math.abs(x-y)<1e-5; });
+    need('lon',         function(a,b){ var x=canonNum(a),y=canonNum(b); return x!=null&&y!=null&&Math.abs(x-y)<1e-5; });
+    return used && ok;
+  }
+  function doPost(e){
+    var body = JSON.parse(e.postData.contents);
+    var sh   = SpreadsheetApp.openById(SHEET_ID).getSheetByName('Sightings');
+    var headers = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+    var out = {ok:true};
+
+    if (body.action === 'append' || !body.action){
+      var rec = body.record || {};
+      sh.appendRow(headers.map(function(h){
+        for (var k in FIELD_MATCH){ if (FIELD_MATCH[k].test(h)) return rec[k]!=null ? rec[k] : ''; }
+        return '';
+      }));
+
+    } else if (body.action === 'update'){
+      var updates = body.updates || [];
+      var data = sh.getDataRange().getValues();           // includes header at row 0
+      var changed = 0;
+      updates.forEach(function(u){
+        for (var r=1; r<data.length; r++){
+          if (rowMatches(data[r], headers, u.match || {})){
+            headers.forEach(function(h, ci){
+              for (var k in FIELD_MATCH){
+                if (FIELD_MATCH[k].test(h) && u.values[k] !== undefined){
+                  sh.getRange(r+1, ci+1).setValue(u.values[k]);
+                }
+              }
+            });
+            changed++; break;                              // first match only
+          }
+        }
+      });
+      out.updated = changed;
+
+    } else if (body.action === 'delete'){
+      var m = body.match || {};
+      var rows = sh.getDataRange().getValues();
+      for (var r2=rows.length-1; r2>=1; r2--){            // bottom-up so indexes stay valid
+        if (rowMatches(rows[r2], headers, m)){ sh.deleteRow(r2+1); out.deleted=true; break; }
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+  }
+  ============================================================================ -->
+</body>
+</html>
