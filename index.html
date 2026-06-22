@@ -546,6 +546,19 @@ function ensureResight(){
 // truthy test for the flag value coming from the Sheet
 function isResighted(v){ return /^(y|yes|true|1|✓|x)$/i.test(String(v??'').trim()); }
 // immutable original key used to match this row back to its Sightings source row
+// a bare Sheets/Excel date serial → 'yyyy-mm-dd'; anything else passes through
+function serialToDate(v){
+  const s=String(v??'').trim();
+  if(/^\d+(\.\d+)?$/.test(s)){
+    const n=parseFloat(s);
+    if(n>=20000 && n<=80000){                 // ~1954..2119: a date, not an id/count
+      const d=new Date(Math.round((n-25569)*86400000));
+      const p=x=>String(x).padStart(2,'0');
+      return d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate());
+    }
+  }
+  return v;
+}
 function snapshotKey(row){
   row._key={
     specimen_id: state.map.id  ?String(row[state.map.id] ??'').trim():'',
@@ -669,6 +682,9 @@ function ingest(parsed,fit){
     .filter(r=>Object.values(r).some(v=>String(v).trim()!==''))
     .map(r=>{ const o={_id:uid()}; headers.forEach(h=>o[h]=r[h]??''); return o; });
   autoMap();
+  // the map_latest date column exports as a Sheets serial (e.g. 46193); turn it
+  // into a real yyyy-mm-dd for display, sorting, and the write-back match key
+  if(state.map.date) state.rows.forEach(r=>{ r[state.map.date]=serialToDate(r[state.map.date]); });
   // freeze each row's original key BEFORE any edits, so write-back matches the
   // correct Sightings row even if the user later edits the date or coordinates
   state.rows.forEach(snapshotKey);
