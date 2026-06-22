@@ -543,7 +543,7 @@ const CONFIG = {
 
 const state = {
   headers:[], rows:[],
-  map:{lat:null,lng:null,id:null,label:null,date:null,depth:null,count:null,sex:null,site:null,comments:null,observer:null,eggs:null,resight:null,waiting:null,position:null},
+  map:{lat:null,lng:null,id:null,sightingId:null,label:null,date:null,depth:null,count:null,sex:null,site:null,comments:null,observer:null,eggs:null,resight:null,waiting:null,position:null},
   selId:null, pickMode:false, markerLayer:null, colonyLayer:null,
   colonyOn:false, colonyRadius:200, sexDominanceOn:false, domIds:new Set(),
   moveMode:false, pendingMove:null,
@@ -730,7 +730,10 @@ function autoMap(){
   const h=state.headers;
   state.map.lat     = detect(h,[/^lat$/i,/latitude/i,/\blat\b/i]);
   state.map.lng     = detect(h,[/^lng$/i,/^lon$/i,/longitude/i,/\blng\b/i,/\blon\b/i]);
-  state.map.id      = detect(h,[/^id$/i,/specimen/i,/\btag\b/i,/animal/i]);
+  state.map.sightingId = detect(h,[/^sighting_?id$/i,/^row_?id$/i,/^uid$/i,/^uuid$/i,/sighting_?id/i]);
+  // specimen/animal id — must not collide with the per-row sighting_id
+  const idCands=h.filter(x=>x!==state.map.sightingId);
+  state.map.id      = detect(idCands,[/^specimen_?id$/i,/specimen/i,/\btag\b/i,/animal/i,/^id$/i]);
   state.map.label   = detect(h,[/label/i]);
   state.map.date    = detect(h,[/date/i]);
   state.map.depth   = detect(h,[/depth/i,/^m$/i,/_m$/i]);
@@ -788,6 +791,7 @@ function serialToDate(v){
 }
 function snapshotKey(row){
   row._key={
+    sighting_id: state.map.sightingId?String(row[state.map.sightingId]??'').trim():'',
     specimen_id: state.map.id  ?String(row[state.map.id] ??'').trim():'',
     date:        state.map.date?String(row[state.map.date]??'').trim():'',
     lat:         state.map.lat ?String(row[state.map.lat] ??'').trim():'',
@@ -802,7 +806,7 @@ function changedValues(r){
   [['specimen_id',state.map.id],['date',state.map.date],['lat',state.map.lat],['lon',state.map.lng],
    ['depth',state.map.depth],['count',state.map.count],['sex',state.map.sex],['site',state.map.site],
    ['comments',state.map.comments],['observer',state.map.observer],['resight',state.map.resight],
-   ['waiting_ss_id',state.map.waiting]
+   ['position',state.map.position],['waiting_ss_id',state.map.waiting]
   ].forEach(([key,col])=>{
     if(!col) return;
     const cur=String(r[col]??''), was=String(o[col]??'');
@@ -1876,7 +1880,7 @@ function doSave(){
     state.dirty.clear(); renderGrid(); updateSaveBar();
     toast('Confirmed locally — no Sheet endpoint set'); return;
   }
-  const updates=rows.map(r=>({ match:r._key||{specimen_id:'',date:'',lat:'',lon:''}, values:changedValues(r) }))
+  const updates=rows.map(r=>({ match:r._key||{sighting_id:'',specimen_id:'',date:'',lat:'',lon:''}, values:changedValues(r) }))
                     .filter(u=>Object.keys(u.values).length);
   if(!updates.length){ state.dirty.clear(); updateSaveBar(); renderGrid(); toast('No actual field changes to save'); return; }
   const url=CONFIG.saveEndpoint+'?payload='+encodeURIComponent(JSON.stringify({action:'update',updates}));
