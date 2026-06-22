@@ -158,6 +158,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 .sd-ctl details[open]>summary:before{content:'\25BE '}
 .sd-ctl .lblrow{display:flex;align-items:center;gap:7px;margin-top:6px;font-size:11px;color:var(--sand);cursor:pointer}
 .sd-ctl .lblrow input{accent-color:var(--isobath)}
+.sd-ctl .domhint{margin:3px 0 2px 21px;font-size:9.5px;color:var(--faint);letter-spacing:.02em}
 .sd-ctl .lrow{display:flex;align-items:center;gap:7px;margin-top:5px;font-size:10.5px;color:var(--sand)}
 .sd-ctl .ldot{width:11px;height:11px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.3)}
 
@@ -430,7 +431,7 @@ const state = {
   headers:[], rows:[],
   map:{lat:null,lng:null,id:null,label:null,date:null,depth:null,count:null,sex:null,site:null,comments:null,observer:null,eggs:null,resight:null,waiting:null,position:null},
   selId:null, pickMode:false, markerLayer:null, colonyLayer:null,
-  colonyOn:false, colonyRadius:200,
+  colonyOn:false, colonyRadius:200, sexDominanceOn:false,
   specimenCount:null,   // data-row count of the Specimens tab (fetched separately)
   labelOpts:{id:true,date:false,resights:false,depth:false,position:false},
   sort:{col:null,dir:1},
@@ -558,6 +559,8 @@ state.colonyLayer = L.layerGroup().addTo(map);
     const d=L.DomUtil.create('div','sd-ctl');
     d.innerHTML='<label class="hd"><input type="checkbox" id="colonyChk"'+(state.colonyOn?' checked':'')+'> Colonies (areas)</label>'
       +`<div class="op"><span>Range</span><input id="colonyR" type="range" min="50" max="500" step="10" value="${state.colonyRadius}"><b id="colonyRv">${state.colonyRadius} m</b></div>`
+      +`<label class="lblrow" id="domRow"><input type="checkbox" id="domChk"${state.sexDominanceOn?' checked':''}> Colour sex-dominant colonies</label>`
+      +'<div class="domhint">≥4 specimens, one sex 2:1+ <span style="color:var(--isobath)">■</span>♂ <span style="color:var(--coral)">■</span>♀</div>'
       +'<details><summary>Pin labels</summary>'
       +LABEL_FIELDS.map(([k,n])=>`<label class="lblrow"><input type="checkbox" data-lbl="${k}"${state.labelOpts[k]?' checked':''}> ${n}</label>`).join('')
       +'</details>'
@@ -569,12 +572,14 @@ state.colonyLayer = L.layerGroup().addTo(map);
     const rng=d.querySelector('#colonyR'), rv=d.querySelector('#colonyRv');
     rng.addEventListener('input',()=>{ state.colonyRadius=+rng.value; rv.textContent=rng.value+' m'; if(state.colonyOn) renderColonies(); updateStats(); });
     rng.addEventListener('change',persist);
+    d.querySelector('#domChk').addEventListener('change',e=>{ state.sexDominanceOn=e.target.checked; if(state.colonyOn) renderColonies(); persist(); });
     d.querySelectorAll('input[data-lbl]').forEach(cb=>cb.addEventListener('change',()=>{
       state.labelOpts[cb.dataset.lbl]=cb.checked; renderMarkers(); persist();
     }));
     // keep control inputs in sync if prefs are restored after the control is built
     window.syncSdCtl=()=>{
       d.querySelector('#colonyChk').checked=state.colonyOn;
+      d.querySelector('#domChk').checked=state.sexDominanceOn;
       rng.value=state.colonyRadius; rv.textContent=state.colonyRadius+' m';
       d.querySelectorAll('input[data-lbl]').forEach(cb=>{ cb.checked=!!state.labelOpts[cb.dataset.lbl]; });
     };
@@ -587,6 +592,7 @@ state.colonyLayer = L.layerGroup().addTo(map);
   try{ const s=JSON.parse(localStorage.getItem('wsd_editor')||'null');
     if(s){
       if(typeof s.colonyOn==='boolean') state.colonyOn=s.colonyOn;
+      if(typeof s.sexDominanceOn==='boolean') state.sexDominanceOn=s.sexDominanceOn;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       if(window.syncSdCtl) syncSdCtl();
@@ -988,14 +994,22 @@ function debouncedRerender(){ clearTimeout(reTimer); reTimer=setTimeout(renderGr
    MARKERS + SYNC
    ========================================================================== */
 function var_(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
-function sexColor(row){
+// classify a row as 'M' | 'F' | 'J' | 'U' (unknown) from sex or trailing ID letter
+function sexClass(row){
   const raw=(row[state.map.sex]||row[state.map.id]||'').toString().toUpperCase();
   const last=raw.slice(-1);
-  if(last==='F'||/FEMALE/.test(raw)) return var_('--coral');
-  if(last==='M'||/MALE/.test(raw))   return var_('--isobath');
-  if(last==='J'||/JUV/.test(raw))    return var_('--gold');
+  if(last==='F'||/FEMALE/.test(raw)) return 'F';
+  if(last==='M'||/MALE/.test(raw))   return 'M';
+  if(last==='J'||/JUV/.test(raw))    return 'J';
+  return 'U';
+}
+function colorForSex(c){
+  if(c==='F') return var_('--coral');
+  if(c==='M') return var_('--isobath');
+  if(c==='J') return var_('--gold');
   return var_('--slate');
 }
+function sexColor(row){ return colorForSex(sexClass(row)); }
 function labelFor(row){
   if(state.map.label && row[state.map.label]) return row[state.map.label];
   const parts=[row[state.map.id],row[state.map.date],row[state.map.depth]?row[state.map.depth]+'m':null,
@@ -1059,6 +1073,22 @@ function computeColonies(){
   pts.forEach((p,i)=>{ const k=find(i); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(p); });
   return [...groups.values()].filter(g=>g.length>=2);   // a colony = 2+ sightings
 }
+// dominant sex of a colony: distinct specimens per sex, 2:1+ over the other, with >3 specimens.
+// returns 'M' | 'F' | null
+function colonySexDominance(g){
+  const idCol=state.map.id, seen=new Map();   // dedup by specimen id so we count animals, not sightings
+  g.forEach(p=>{
+    const id=idCol?String(p.r[idCol]??'').trim():'';
+    const key=id||('row:'+p.r._id);
+    if(!seen.has(key)) seen.set(key,sexClass(p.r));
+  });
+  const sexes=[...seen.values()];
+  if(sexes.length<=3) return null;             // need more than 3 specimens
+  const m=sexes.filter(s=>s==='M').length, f=sexes.filter(s=>s==='F').length;
+  if(m>=2*f && m>f) return 'M';
+  if(f>=2*m && f>m) return 'F';
+  return null;
+}
 // smallest-enclosing convex hull (monotone chain) for a polygon outline
 function hull(coords){
   const p=coords.slice().sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
@@ -1072,10 +1102,12 @@ function renderColonies(){
   if(!state.colonyLayer) return;
   state.colonyLayer.clearLayers();
   if(!state.colonyOn) return;
-  const C=var_('--coral');                 // high-contrast colour for colony areas
+  const NEUTRAL=var_('--coral');           // default high-contrast colour
   let count=0;
   computeColonies().forEach(g=>{
     count++;
+    const dom=state.sexDominanceOn?colonySexDominance(g):null;
+    const C=dom?colorForSex(dom):NEUTRAL;
     const latlngs=g.map(p=>[p.lat,p.lng]);
     if(g.length===2){
       // two points: draw a capsule-ish pair of buffered circles + connector
@@ -1085,11 +1117,12 @@ function renderColonies(){
       const poly=hull(latlngs);
       // soft outer glow ring under the main polygon
       L.polygon(poly,{color:C,weight:7,opacity:.22,fill:false,interactive:false,lineJoin:'round'}).addTo(state.colonyLayer);
-      L.polygon(poly,{color:C,weight:3,opacity:.95,fillColor:C,fillOpacity:.32,interactive:false,lineJoin:'round'}).addTo(state.colonyLayer);
+      L.polygon(poly,{color:C,weight:3,opacity:.95,fillColor:C,fillOpacity:dom?.4:.32,interactive:false,lineJoin:'round'}).addTo(state.colonyLayer);
     }
-    // count label at the centroid
+    // count label at the centroid (note the dominant sex when flagged)
     const c=latlngs.reduce((a,ll)=>[a[0]+ll[0],a[1]+ll[1]],[0,0]).map(v=>v/latlngs.length);
-    L.marker(c,{interactive:false,icon:L.divIcon({className:'colony-tag',html:g.length+' sightings',iconSize:null})}).addTo(state.colonyLayer);
+    const tag=g.length+' sightings'+(dom?` · ${dom==='M'?'♂':'♀'}-dominant`:'');
+    L.marker(c,{interactive:false,icon:L.divIcon({className:'colony-tag'+(dom?' colony-dom':''),html:tag,iconSize:null})}).addTo(state.colonyLayer);
   });
   return count;
 }
@@ -1441,7 +1474,7 @@ function persist(){
   try{ localStorage.setItem('wsd_editor',JSON.stringify({
     headers:state.headers, map:state.map, sort:state.sort,
     colOrder:state.colOrder, colWidth:state.colWidth, dirty:[...state.dirty],
-    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, labelOpts:state.labelOpts,
+    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, sexDominanceOn:state.sexDominanceOn, labelOpts:state.labelOpts,
     rows:state.rows.map(r=>{ const {_marker,...rest}=r; return rest; })
   })); }catch(e){}
 }
@@ -1451,6 +1484,7 @@ function restore(){
       state.headers=s.headers; state.map=Object.assign(state.map,s.map); if(s.sort) state.sort=s.sort;
       if(s.colOrder) state.colOrder=s.colOrder; if(s.colWidth) state.colWidth=s.colWidth;
       if(typeof s.colonyOn==='boolean') state.colonyOn=s.colonyOn;
+      if(typeof s.sexDominanceOn==='boolean') state.sexDominanceOn=s.sexDominanceOn;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
