@@ -93,12 +93,15 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 .grid td.coordbad input{color:var(--gold)}
 .col-idx{width:32px;text-align:center;color:var(--faint);font-size:9.5px;background:var(--shelf)!important;position:sticky;left:0;z-index:2;border-right:1px solid var(--line)}
 .grid thead th.col-idx{z-index:4}
-.col-act{width:46px;text-align:center;white-space:nowrap}
+.col-act{width:72px;text-align:center;white-space:nowrap}
 .dragpin{color:var(--faint);font-size:11px}
 .dragpin.has{color:var(--isobath)}
 .rowdel{display:none;margin-left:5px;color:var(--faint);font-size:12px;line-height:1;padding:1px 4px;border-radius:4px;vertical-align:middle}
 .grid tbody tr:hover .rowdel{display:inline-block}
 .rowdel:hover{color:#fff;background:var(--danger)}
+.rowedit{display:none;margin-left:5px;color:var(--faint);font-size:12px;line-height:1;padding:1px 4px;border-radius:4px;vertical-align:middle}
+.grid tbody tr:hover .rowedit{display:inline-block}
+.rowedit:hover{color:#fff;background:var(--isobath)}
 .depthcell{position:relative}
 .depthbar{position:absolute;left:0;bottom:0;height:2px;background:var(--isobath);opacity:.7}
 
@@ -175,6 +178,10 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
   background:var(--ink);border:1px solid var(--isobath-dim);border-radius:12px;
   box-shadow:0 20px 60px rgba(0,0,0,.6);display:none;flex-direction:column;overflow:hidden}
 #smodal.show{display:flex}
+#emodal{position:fixed;top:64px;left:16px;width:468px;max-height:calc(100vh - 96px);z-index:1210;
+  background:var(--ink);border:1px solid var(--isobath-dim);border-radius:12px;
+  box-shadow:0 20px 60px rgba(0,0,0,.6);display:none;flex-direction:column;overflow:hidden}
+#emodal.show{display:flex}
 .sm-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;
   border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--shelf),var(--ink))}
 .sm-head h3{font-family:var(--disp);font-weight:600;font-size:16px}
@@ -354,6 +361,7 @@ body.locked #gate{display:flex}
   body.view-data #right{display:none}
   #viewToggle{display:flex}
   #smodal{left:8px;right:8px;width:auto;top:8px;max-height:calc(100vh - 16px)}
+  #emodal{left:8px;right:8px;width:auto;top:8px;max-height:calc(100vh - 16px)}
 }
 @media(min-width:821px){ body.view-map #left,body.view-data #left{display:flex} }
 </style>
@@ -466,6 +474,36 @@ body.locked #gate{display:flex}
   <div class="sm-foot">
     <button class="btn" id="smCancel">Cancel</button>
     <button class="btn coral" id="smCommit">Commit</button>
+  </div>
+</div>
+
+<div id="emodal">
+  <div class="sm-head"><h3>Edit <em>sighting</em></h3><button class="sm-x" id="emClose">✕</button></div>
+  <div class="sm-body">
+    <div class="f2">
+      <label>Date<input id="emDate" placeholder="yyyy-mm-dd"></label>
+      <label>Observer<select id="emObserver"><option>Marco</option><option>Pete</option></select></label>
+    </div>
+    <div class="f2">
+      <label>Specimen ID(s)<input id="emId" placeholder="Wildaware ID — optional"></label>
+      <label>Depth (m)<input id="emDepth" inputmode="decimal" placeholder="22"></label>
+    </div>
+    <div class="f2">
+      <label>Latitude<input id="emLat" inputmode="decimal" placeholder="-33.79…"></label>
+      <label>Longitude<input id="emLng" inputmode="decimal" placeholder="151.30…"></label>
+    </div>
+    <div class="f2">
+      <label>Sex<select id="emSex"><option>Unknown</option><option>Male</option><option>Female</option><option>Juvenile</option></select></label>
+      <div class="checks" style="align-self:end;padding-bottom:6px">
+        <label class="chk"><input type="checkbox" id="emEggs"> Carrying eggs</label>
+        <label class="chk"><input type="checkbox" id="emWaiting"> Waiting for SeadragonSearch ID</label>
+      </div>
+    </div>
+    <label>Comments<textarea id="emComments" placeholder="conditions, behaviour, anything notable…"></textarea></label>
+  </div>
+  <div class="sm-foot">
+    <button class="btn" id="emCancel">Cancel</button>
+    <button class="btn coral" id="emCommit">Apply</button>
   </div>
 </div>
 
@@ -749,6 +787,7 @@ function autoMap(){
   state.map.position= detect(h,[/position_source/i,/position/i,/source/i,/method/i]);
   ensureComments();
   ensureObserver();
+  ensureEggs();
   ensureResight();
   ensureWaiting();
 }
@@ -807,6 +846,7 @@ function changedValues(r){
   [['specimen_id',state.map.id],['date',state.map.date],['lat',state.map.lat],['lon',state.map.lng],
    ['depth',state.map.depth],['count',state.map.count],['sex',state.map.sex],['site',state.map.site],
    ['comments',state.map.comments],['observer',state.map.observer],['resight',state.map.resight],
+   ['eggs',state.map.eggs],
    ['position',state.map.position],['waiting_ss_id',state.map.waiting]
   ].forEach(([key,col])=>{
     if(!col) return;
@@ -825,6 +865,17 @@ function ensureComments(){
     state.headers.push(state.map.comments);
   }
 }
+/* eggs lives in the Sightings tab (col E); ensure the column exists so it can
+   be shown/edited even when the CSV omits it. */
+function ensureEggs(){
+  if(state.map.eggs && state.headers.includes(state.map.eggs)) return;
+  if(!state.map.eggs){
+    if(!state.headers.includes('eggs')) state.headers.push('eggs');
+    state.map.eggs='eggs';
+  } else if(!state.headers.includes(state.map.eggs)){
+    state.headers.push(state.map.eggs);
+  }
+}
 /* observer lives in the Sightings tab (col K), not in map_latest — ensure the
    column exists so it can be shown/edited even when the CSV omits it. */
 function ensureObserver(){
@@ -840,7 +891,7 @@ function ensureObserver(){
    the pre-built label column is hidden (still used for map tooltips). */
 function orderedKeys(){
   const m=state.map;
-  const pref=[m.date,m.observer,m.id,m.resight,m.waiting,m.depth,m.comments,m.lat,m.lng].filter(Boolean);
+  const pref=[m.date,m.observer,m.id,m.resight,m.waiting,m.depth,m.eggs,m.comments,m.lat,m.lng].filter(Boolean);
   const seen=new Set(pref);
   return pref.concat(state.headers.filter(h=>!seen.has(h) && h!==m.label && h!==m.sightingId));
 }
@@ -849,6 +900,7 @@ function colLabel(h){
   if(h===state.map.comments) return /note/i.test(h)?'Notes':'Comments';
   if(h===state.map.resight) return 'Resighted';
   if(h===state.map.observer) return 'Observer';
+  if(h===state.map.eggs) return 'With eggs';
   return h;
 }
 /* user-arranged order: starts from the default, keeps the user's drag order,
@@ -869,6 +921,7 @@ function colW(k){
   if(k===state.map.resight) return 84;
   if(k===state.map.depth) return 80;
   if(k===state.map.observer) return 100;
+  if(k===state.map.eggs) return 80;
   if(k===state.map.lat||k===state.map.lng) return 112;
   return 120;
 }
@@ -1025,6 +1078,7 @@ function renderGrid(){
   if(!state.headers.length){ renderEmpty(); return; }
   ensureComments();
   ensureObserver();
+  ensureEggs();
   const keys=displayKeys();
   const tbl=document.createElement('table'); tbl.className='grid'; tbl.style.tableLayout='fixed';
 
@@ -1032,10 +1086,10 @@ function renderGrid(){
   const cg=document.createElement('colgroup');
   const colEls={};
   const ci=document.createElement('col'); ci.style.width='34px'; cg.appendChild(ci);
-  const ca=document.createElement('col'); ca.style.width='48px'; cg.appendChild(ca);
+  const ca=document.createElement('col'); ca.style.width='74px'; cg.appendChild(ca);
   keys.forEach(k=>{ const c=document.createElement('col'); c.style.width=colW(k)+'px'; cg.appendChild(c); colEls[k]=c; });
   tbl.appendChild(cg);
-  tbl.style.width=(34+48+keys.reduce((a,k)=>a+colW(k),0))+'px';
+  tbl.style.width=(34+74+keys.reduce((a,k)=>a+colW(k),0))+'px';
 
   const thead=document.createElement('thead'); const htr=document.createElement('tr');
   htr.innerHTML='<th class="col-idx">#</th><th class="col-act"></th>';
@@ -1062,7 +1116,7 @@ function renderGrid(){
       e.preventDefault(); e.stopPropagation();
       th.draggable=false;                         // don't start a column-drag while resizing
       const startX=e.clientX, startW=colW(h), col=colEls[h];
-      const onMove=ev=>{ const w=Math.max(40,startW+(ev.clientX-startX)); state.colWidth[h]=w; if(col) col.style.width=w+'px'; tbl.style.width=(34+48+keys.reduce((a,k)=>a+colW(k),0))+'px'; };
+      const onMove=ev=>{ const w=Math.max(40,startW+(ev.clientX-startX)); state.colWidth[h]=w; if(col) col.style.width=w+'px'; tbl.style.width=(34+74+keys.reduce((a,k)=>a+colW(k),0))+'px'; };
       const onUp=()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); th.draggable=true; persist(); };
       document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
     });
@@ -1080,7 +1134,8 @@ function renderGrid(){
     const tdIdx=document.createElement('td'); tdIdx.className='col-idx'; tdIdx.textContent=i+1; tr.appendChild(tdIdx);
     const tdAct=document.createElement('td'); tdAct.className='col-act';
     const hasGeo=isFinite(parseFloat(row[state.map.lat]))&&isFinite(parseFloat(row[state.map.lng]));
-    tdAct.innerHTML=`<span class="dragpin ${hasGeo?'has':''}" title="${hasGeo?'mapped':'no coords'}">●</span><button class="rowdel" title="Delete this sighting">✕</button>`;
+    tdAct.innerHTML=`<span class="dragpin ${hasGeo?'has':''}" title="${hasGeo?'mapped':'no coords'}">●</span><button class="rowedit" title="Edit this sighting">✎</button><button class="rowdel" title="Delete this sighting">✕</button>`;
+    tdAct.querySelector('.rowedit').addEventListener('click',ev=>{ ev.stopPropagation(); openEdit(row._id); });
     tdAct.querySelector('.rowdel').addEventListener('click',ev=>{ ev.stopPropagation(); askDelete(row._id); });
     tr.appendChild(tdAct);
     keys.forEach(h=>{
@@ -1111,6 +1166,22 @@ function renderGrid(){
           row[h]=cb.checked?'Y':'';
           td.classList.toggle('on',cb.checked);
           tr.classList.toggle('await-ss',cb.checked);
+          markDirty(row._id); refreshMarker(row); persist();
+        });
+        if(cb.checked) td.classList.add('on');
+        td.appendChild(cb);
+        tr.appendChild(td);
+        return;
+      }
+      // with-eggs (brooding) → a flag checkbox
+      if(h===state.map.eggs){
+        td.className='flagcell';
+        const cb=document.createElement('input'); cb.type='checkbox';
+        cb.checked=isResighted(row[h]); cb.dataset.col=h; cb.dataset.id=row._id;
+        cb.title='Animal observed carrying eggs (brooding male)';
+        cb.addEventListener('change',()=>{
+          row[h]=cb.checked?'Y':'';
+          td.classList.toggle('on',cb.checked);
           markDirty(row._id); refreshMarker(row); persist();
         });
         if(cb.checked) td.classList.add('on');
@@ -1574,6 +1645,78 @@ function commitSighting(){
   }
   closeSighting();
 }
+
+/* ============================================================================
+   EDIT-ROW MODAL  (modify an existing sighting)
+   Writes straight into the in-memory row and reuses the standard dirty/save
+   pipeline (changedValues → Sightings), so edits sync to the Sheet on save.
+   ========================================================================== */
+const emodal=document.getElementById('emodal');
+let emRowId=null;
+// map a stored sex cell to a select option, and back
+function sexToOption(v){
+  const s=String(v??'').trim().toUpperCase();
+  if(s==='M'||/MALE/.test(s)) return 'Male';
+  if(s==='F'||/FEMALE/.test(s)) return 'Female';
+  if(s==='J'||/JUV/.test(s)) return 'Juvenile';
+  if(s==='') return 'Unknown';
+  return 'Unknown';
+}
+function openEdit(id){
+  const row=state.rows.find(r=>r._id===id);
+  if(!row){ toast('Row not found'); return; }
+  emRowId=id;
+  const g=h=>h?(row[h]??''):'';
+  $('emDate').value     = g(state.map.date);
+  $('emDepth').value    = g(state.map.depth);
+  $('emId').value       = g(state.map.id);
+  $('emLat').value      = g(state.map.lat);
+  $('emLng').value      = g(state.map.lng);
+  $('emComments').value = g(state.map.comments);
+  // observer — add the stored value as an option if it isn't already listed
+  const obs=g(state.map.observer), osel=$('emObserver');
+  if(obs && ![...osel.options].some(o=>o.value===obs)) osel.add(new Option(obs,obs));
+  osel.value = obs || (state.observer||'Marco');
+  $('emSex').value      = sexToOption(g(state.map.sex));
+  $('emEggs').checked   = state.map.eggs    ? isResighted(g(state.map.eggs)) : false;
+  $('emWaiting').checked= state.map.waiting ? isWaiting(g(state.map.waiting)) : false;
+  smodal.classList.remove('show');           // never both open at once
+  emodal.classList.add('show');
+  setTimeout(()=>$('emId').focus(),50);
+}
+function closeEdit(){ emodal.classList.remove('show'); emRowId=null; }
+
+// entering/keeping a Specimen ID clears the "waiting for SeadragonSearch ID" flag
+$('emId').addEventListener('input',()=>{ if($('emId').value.trim()) $('emWaiting').checked=false; });
+
+function applyEdit(){
+  const row=state.rows.find(r=>r._id===emRowId);
+  if(!row){ closeEdit(); return; }
+  const date=toISO($('emDate').value.trim());
+  if(!date){ toast('Add a date first'); $('emDate').focus(); return; }
+  const idVal=$('emId').value.trim();
+  // rule: a real Specimen ID means it's no longer waiting for a SeadragonSearch ID
+  const waiting = idVal ? false : $('emWaiting').checked;
+
+  const setCol=(col,val)=>{ if(col) row[col]=val; };
+  setCol(state.map.date,     date);
+  setCol(state.map.observer, $('emObserver').value);
+  setCol(state.map.id,       idVal);
+  setCol(state.map.depth,    $('emDepth').value.trim());
+  setCol(state.map.comments, $('emComments').value.trim());
+  setCol(state.map.lat,      $('emLat').value.trim());
+  setCol(state.map.lng,      $('emLng').value.trim());
+  setCol(state.map.sex,      $('emSex').value);
+  setCol(state.map.eggs,     $('emEggs').checked?'Y':'');
+  setCol(state.map.waiting,  waiting?'Y':'');
+
+  markDirty(row._id); refreshMarker(row); renderGrid(); persist();
+  toast('Row updated — Save to write to the Sheet');
+  closeEdit();
+}
+$('emClose').addEventListener('click',closeEdit);
+$('emCancel').addEventListener('click',closeEdit);
+$('emCommit').addEventListener('click',applyEdit);
 
 /* ============================================================================
    EXPORT
