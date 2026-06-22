@@ -40,6 +40,21 @@ button{cursor:pointer;background:none;border:none}
 .l-sub b{color:var(--isobath);font-weight:600}
 
 .toolbar{display:flex;gap:6px;flex-wrap:wrap;padding:9px 16px;border-bottom:1px solid var(--line);align-items:center}
+.timewin{margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
+.tw-row{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--sand-dim);margin-bottom:7px}
+.tw-cap{font-weight:600;color:var(--faint);letter-spacing:.04em;text-transform:uppercase;font-size:9.5px}
+.tw-val{font-weight:600;color:var(--gold);font-variant-numeric:tabular-nums}
+.tw-dash{color:var(--faint)}
+.tw-reset{margin-left:auto;background:none;border:1px solid var(--line);color:var(--sand-dim);font-size:9.5px;padding:2px 7px;border-radius:5px;cursor:pointer;letter-spacing:.03em}
+.tw-reset:hover{border-color:var(--coral);color:var(--coral)}
+.tw-sliders{position:relative;height:18px}
+.tw-sliders input[type=range]{position:absolute;left:0;top:0;width:100%;margin:0;-webkit-appearance:none;appearance:none;background:none;pointer-events:none;height:18px}
+.tw-sliders input[type=range]::-webkit-slider-runnable-track{height:3px;background:transparent}
+.tw-sliders input[type=range]::-moz-range-track{height:3px;background:transparent}
+.tw-sliders::before{content:"";position:absolute;left:0;right:0;top:8px;height:3px;background:var(--line);border-radius:2px}
+.tw-fill{position:absolute;top:8px;height:3px;background:var(--coral);border-radius:2px;pointer-events:none}
+.tw-sliders input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;pointer-events:auto;width:14px;height:14px;border-radius:50%;background:var(--gold);border:2px solid #06141d;cursor:pointer;margin-top:-6px}
+.tw-sliders input[type=range]::-moz-range-thumb{pointer-events:auto;width:14px;height:14px;border-radius:50%;background:var(--gold);border:2px solid #06141d;cursor:pointer}
 .tabs{display:flex;gap:2px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--ink)}
 .tab{font-family:var(--ui);font-size:12px;font-weight:500;color:var(--sand-dim);padding:10px 15px;border-bottom:2px solid transparent;margin-bottom:-1px;letter-spacing:.01em}
 .tab:hover{color:var(--sand)}
@@ -52,7 +67,12 @@ button{cursor:pointer;background:none;border:none}
 .spec .dot{width:11px;height:11px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.25)}
 .spec .sid{font-family:var(--disp);font-size:14px;font-weight:600;min-width:62px;color:var(--sand)}
 .spec .meta{flex:1;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--sand-dim);font-variant-numeric:tabular-nums}
-.spec .cnt{flex:none;font-size:10px;color:var(--abyss);background:var(--isobath-dim);border-radius:10px;padding:2px 9px;font-weight:600}
+.spec .meta>span{min-width:88px}
+.spec .meta>span:first-child{min-width:62px}
+.spec-head{position:sticky;top:0;z-index:2;background:var(--ink);cursor:default;border-bottom:1px solid var(--isobath-dim);text-transform:uppercase;letter-spacing:.05em}
+.spec-head:hover{background:var(--ink)}
+.spec-head .sid,.spec-head .meta>span{font-size:9.5px;font-weight:700;color:var(--faint)}
+.spec-head .dot-h{background:transparent;border:1px dashed var(--faint)}
 .btn{font-family:var(--ui);font-size:11.5px;font-weight:500;padding:6px 11px;border-radius:6px;background:var(--shelf);border:1px solid var(--line);color:var(--sand);display:inline-flex;align-items:center;gap:6px;line-height:1;transition:background .12s,border-color .12s,transform .05s}
 .btn:hover{border-color:var(--isobath);color:#fff}
 .btn:active{transform:translateY(1px)}
@@ -393,6 +413,20 @@ body.locked #gate{display:flex}
         <span><b id="statIndiv">0</b> individuals</span>
         <span><b id="statColonies">0</b> colonies</span>
       </div>
+      <div class="timewin" id="timeWin" style="display:none">
+        <div class="tw-row">
+          <span class="tw-cap">Window</span>
+          <span class="tw-val" id="twFrom">—</span>
+          <span class="tw-dash">→</span>
+          <span class="tw-val" id="twTo">—</span>
+          <button class="tw-reset" id="twReset" title="Show all dates">reset</button>
+        </div>
+        <div class="tw-sliders">
+          <div class="tw-fill" id="twFill"></div>
+          <input type="range" id="twMin" min="0" max="100" value="0">
+          <input type="range" id="twMax" min="0" max="100" value="100">
+        </div>
+      </div>
     </div>
 
     <div class="tabs">
@@ -557,6 +591,7 @@ body.locked #gate{display:flex}
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
 <script>
@@ -587,6 +622,8 @@ const state = {
   selId:null, pickMode:false, markerLayer:null, colonyLayer:null,
   colonyOn:false, colonyRadius:200, sexDominanceOn:true, domIds:new Set(),
   moveMode:false, pendingMove:null,
+  tw:{min:null,max:null,lo:null,hi:null},   // date window: epoch-day bounds (lo/hi = selected)
+  heatOn:false,
   specimenCount:null,   // data-row count of the Specimens tab (fetched separately)
   sightings:null,       // {rows,headers,cols} from the raw Sightings tab (event-level, for dashboard)
   observer:null,        // logged-in observer (from the password gate), used to prefill new sightings
@@ -704,6 +741,21 @@ bathyRefresh();
 
 state.markerLayer = L.layerGroup().addTo(map);
 state.colonyLayer = L.layerGroup().addTo(map);
+/* heatmap layer — sighting density, respects the active time window */
+function renderHeat(){
+  if(state.heatLayer){ map.removeLayer(state.heatLayer); state.heatLayer=null; }
+  if(!state.heatOn) return;
+  if(typeof L.heatLayer!=='function'){ toast('Heatmap library not loaded'); return; }
+  const pts=state.rows
+    .filter(r=>inWindow(r))
+    .map(r=>[parseFloat(r[state.map.lat]),parseFloat(r[state.map.lng])])
+    .filter(p=>isFinite(p[0])&&isFinite(p[1]))
+    .map(p=>[p[0],p[1],0.8]);
+  if(!pts.length) return;
+  state.heatLayer=L.heatLayer(pts,{radius:28,blur:20,minOpacity:.35,maxZoom:17,
+    gradient:{0.2:'#2c7fb8',0.45:'#41b6c4',0.65:'#7fcdbb',0.8:'#f2c14e',1.0:'#ec7551'}
+  }).addTo(map);
+}
 
 /* ---- sightings control: colony areas · pin labels · colour legend ---- */
 (function(){
@@ -722,6 +774,7 @@ state.colonyLayer = L.layerGroup().addTo(map);
       +`<div class="op"><span>Range</span><input id="colonyR" type="range" min="50" max="500" step="10" value="${state.colonyRadius}"><b id="colonyRv">${state.colonyRadius} m</b></div>`
       +`<label class="lblrow" id="moveRow" style="margin-top:8px;border-top:1px solid var(--line);padding-top:9px"><input type="checkbox" id="moveChk"${state.moveMode?' checked':''}> Move pins (drag to reposition)</label>`
       +'<div class="domhint">drag a pin, then confirm the new spot</div>'
+      +`<label class="lblrow" id="heatRow" style="margin-top:8px;border-top:1px solid var(--line);padding-top:9px"><input type="checkbox" id="heatChk"${state.heatOn?' checked':''}> Heatmap (sighting density)</label>`
       +'<details><summary>Pin labels</summary>'
       +LABEL_FIELDS.map(([k,n])=>`<label class="lblrow"><input type="checkbox" data-lbl="${k}"${state.labelOpts[k]?' checked':''}> ${n}</label>`).join('')
       +'</details>'
@@ -745,6 +798,7 @@ state.colonyLayer = L.layerGroup().addTo(map);
     rng.addEventListener('change',persist);
     d.querySelector('#moveChk').addEventListener('change',e=>{ state.moveMode=e.target.checked; renderMarkers();
       toast(state.moveMode?'Move mode on — drag a pin to reposition it':'Move mode off'); });
+    d.querySelector('#heatChk').addEventListener('change',e=>{ state.heatOn=e.target.checked; renderHeat(); persist(); });
     d.querySelectorAll('input[data-lbl]').forEach(cb=>cb.addEventListener('change',()=>{
       state.labelOpts[cb.dataset.lbl]=cb.checked; renderMarkers(); persist();
     }));
@@ -752,6 +806,7 @@ state.colonyLayer = L.layerGroup().addTo(map);
     window.syncSdCtl=()=>{
       d.querySelector('#colonyChk').checked=state.colonyOn;
       d.querySelector('#moveChk').checked=state.moveMode;
+      d.querySelector('#heatChk').checked=state.heatOn;
       rng.value=state.colonyRadius; rv.textContent=state.colonyRadius+' m';
       d.querySelectorAll('input[data-lbl]').forEach(cb=>{ cb.checked=!!state.labelOpts[cb.dataset.lbl]; });
     };
@@ -764,6 +819,7 @@ state.colonyLayer = L.layerGroup().addTo(map);
   try{ const s=JSON.parse(localStorage.getItem('wsd_editor')||'null');
     if(s){
       state.colonyOn=false;   // colonies only valid on specimens tab; app opens on sightings
+      if(typeof s.heatOn==='boolean') state.heatOn=s.heatOn;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       if(window.syncSdCtl) syncSdCtl();
@@ -963,7 +1019,7 @@ function setSort(col){
 }
 function displayRows(){
   const q=document.getElementById('search').value.trim().toLowerCase();
-  let rows=state.rows.filter(r=>!q || state.headers.some(h=>String(r[h]).toLowerCase().includes(q)));
+  let rows=state.rows.filter(r=>inWindow(r) && (!q || state.headers.some(h=>String(r[h]).toLowerCase().includes(q))));
   const col=state.sort.col;
   if(col){
     const isDate=(col===state.map.date);
@@ -1000,6 +1056,7 @@ function ingest(parsed,fit){
   state.rows.forEach(snapshotKey);
   state.dirty.clear();
   if(state.map.date) state.sort={col:state.map.date,dir:-1}; // newest first by default
+  initTimeWindow();
   renderAll(); persist(); updateSaveBar();
   toast(`Loaded ${state.rows.length} sightings`);
   if(fit!==false) fitToData();
@@ -1295,6 +1352,7 @@ function refreshMarker(row){
   if(row._marker){ state.markerLayer.removeLayer(row._marker); row._marker=null; }
   if(row._leg){ state.markerLayer.removeLayer(row._leg); row._leg=null; }
   if(!isFinite(lat)||!isFinite(lng)) return;
+  if(!inWindow(row)) return;                 // hidden by the time window
   // display position: spider-offset if this pin overlaps others, else true coords
   const off=(state.spider&&state.spider[row._id])||{lat,lng};
   const dLat=off.lat, dLng=off.lng;
@@ -1327,7 +1385,7 @@ function refreshMarker(row){
   }
   m.addTo(state.markerLayer); row._marker=m;
 }
-function renderMarkers(){ state.markerLayer.clearLayers(); state.spider=computeSpiderOffsets(); state.rows.forEach(r=>{r._marker=null;r._leg=null;refreshMarker(r);}); }
+function renderMarkers(){ state.markerLayer.clearLayers(); state.spider=computeSpiderOffsets(); state.rows.forEach(r=>{r._marker=null;r._leg=null;refreshMarker(r);}); renderHeat(); }
 
 /* ---- COLONIES: cluster mapped sightings within state.colonyRadius metres ---- */
 function haversine(a,b){
@@ -1345,7 +1403,7 @@ function computeSpiderOffsets(){
   // group rows by near-identical true coordinates (within ~3 m)
   const pts=state.rows
     .map(r=>({r,lat:parseFloat(r[state.map.lat]),lng:parseFloat(r[state.map.lng])}))
-    .filter(p=>isFinite(p.lat)&&isFinite(p.lng));
+    .filter(p=>isFinite(p.lat)&&isFinite(p.lng)&&inWindow(p.r));
   const groups=[]; const TOL=3; // metres
   pts.forEach(p=>{
     let g=groups.find(grp=>haversine([grp.lat,grp.lng],[p.lat,p.lng])<TOL);
@@ -1378,7 +1436,7 @@ function computeSpiderOffsets(){
 function computeColonies(){
   const pts=state.rows
     .map(r=>({r,lat:parseFloat(r[state.map.lat]),lng:parseFloat(r[state.map.lng])}))
-    .filter(p=>isFinite(p.lat)&&isFinite(p.lng));
+    .filter(p=>isFinite(p.lat)&&isFinite(p.lng)&&inWindow(p.r));
   const n=pts.length, parent=pts.map((_,i)=>i);
   const find=i=>{ while(parent[i]!==i){ parent[i]=parent[parent[i]]; i=parent[i]; } return i; };
   const uni=(i,j)=>{ parent[find(i)]=find(j); };
@@ -1498,17 +1556,21 @@ function renderSpecimens(){
   groups.sort((a,b)=>String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
   if(!groups.length){ specWrap.innerHTML='<div class="empty">No specimens to show</div>'; return; }
   specWrap.innerHTML='';
+  // column header explaining each field
+  const head=document.createElement('div'); head.className='spec spec-head';
+  head.innerHTML='<span class="dot dot-h" title="Pin colour = sex"></span>'
+    +'<span class="sid">ID</span>'
+    +'<span class="meta"><span>Sex</span><span>Latest sighting</span><span>Depth</span></span>';
+  specWrap.appendChild(head);
   groups.forEach(g=>{
     const first=g.rows[0];
     const sx=state.map.sex?(first[state.map.sex]||''):'';
     const dates=g.rows.map(r=>r[state.map.date]).filter(Boolean);
     const depth=state.map.depth?(first[state.map.depth]||''):'';
-    const mapped=g.rows.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
     const el=document.createElement('div'); el.className='spec'; el.dataset.spec=g.key;
     el.innerHTML=`<span class="dot" style="background:${sexColor(first)}"></span>`
       +`<span class="sid">${g.id}</span>`
-      +`<span class="meta"><span>${sx||'—'}</span>${dates.length?`<span>${dates[dates.length-1]}</span>`:''}${depth?`<span>${depth} m</span>`:''}</span>`
-      +`<span class="cnt">${mapped} dot${mapped===1?'':'s'}</span>`;
+      +`<span class="meta"><span>${sx||'—'}</span><span>${dates.length?dates[dates.length-1]:'—'}</span><span>${depth?depth+' m':'—'}</span></span>`;
     el.addEventListener('click',()=>highlightSpecimen(g,el));
     specWrap.appendChild(el);
   });
@@ -2145,20 +2207,81 @@ document.getElementById('svConfirm').addEventListener('click',doSave);
    STATS / ORCHESTRATION / PERSISTENCE
    ========================================================================== */
 function updateStats(){
-  const mapped=state.rows.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
-  const indiv=(state.specimenCount!=null)?state.specimenCount:buildSpecimens().length;
+  const vis=state.rows.filter(inWindow);
+  const mapped=vis.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
+  const idCol=state.map.id;
+  const specSet=new Set(); let blanks=0;
+  vis.forEach(r=>{ const id=idCol?String(r[idCol]??'').trim():''; if(id) specSet.add(id.toUpperCase()); else blanks++; });
+  const indiv=twActive()?(specSet.size+blanks):((state.specimenCount!=null)?state.specimenCount:buildSpecimens().length);
   const col=computeColonies().length;                  // clusters found by the colony selector (current range)
-  document.getElementById('statTotal').textContent=state.rows.length;
+  document.getElementById('statTotal').textContent=vis.length;
   document.getElementById('statMapped').textContent=mapped;
   document.getElementById('statIndiv').textContent=indiv;
   document.getElementById('statColonies').textContent=col;
 }
 function renderAll(){ renderGrid(); renderColonies(); renderMarkers(); updateStats(); if(currentTab()==='specimens') renderSpecimens(); }
+
+/* ============================================================================
+   TIME WINDOW  (filter sightings by day across grid, map, colonies, heatmap)
+   Works in epoch-days. lo/hi are the selected bounds; min/max the data span.
+   ========================================================================== */
+const DAY=86400000;
+function epochDay(v){ const t=parseDate(v); return isNaN(t)?NaN:Math.floor(t/DAY); }
+function twActive(){ return state.tw.lo!=null && (state.tw.lo>state.tw.min || state.tw.hi<state.tw.max); }
+function inWindow(row){
+  if(state.tw.lo==null) return true;
+  const d=epochDay(row[state.map.date]);
+  if(isNaN(d)) return true;                 // undated rows always shown
+  return d>=state.tw.lo && d<=state.tw.hi;
+}
+function dayToLabel(day){
+  if(day==null||isNaN(day)) return '—';
+  const dt=new Date(day*DAY);
+  const p=n=>String(n).padStart(2,'0');
+  return `${p(dt.getUTCDate())}/${p(dt.getUTCMonth()+1)}/${dt.getUTCFullYear()}`;
+}
+function initTimeWindow(){
+  const days=state.rows.map(r=>epochDay(r[state.map.date])).filter(d=>!isNaN(d));
+  const tw=document.getElementById('timeWin');
+  if(days.length<2){ if(tw) tw.style.display='none'; state.tw={min:null,max:null,lo:null,hi:null}; return; }
+  const min=Math.min(...days), max=Math.max(...days);
+  state.tw={min,max,lo:min,hi:max};
+  if(tw) tw.style.display='block';
+  const sMin=$('twMin'), sMax=$('twMax');
+  sMin.min=sMax.min=min; sMin.max=sMax.max=max;
+  sMin.value=min; sMax.value=max;
+  updateTimeWindowUI();
+}
+function updateTimeWindowUI(){
+  $('twFrom').textContent=dayToLabel(state.tw.lo);
+  $('twTo').textContent=dayToLabel(state.tw.hi);
+  const span=Math.max(1,state.tw.max-state.tw.min);
+  const a=(state.tw.lo-state.tw.min)/span*100, b=(state.tw.hi-state.tw.min)/span*100;
+  const fill=$('twFill'); if(fill){ fill.style.left=a+'%'; fill.style.width=Math.max(0,b-a)+'%'; }
+}
+function onTimeWindowChange(){
+  let lo=+$('twMin').value, hi=+$('twMax').value;
+  if(lo>hi){ const t=lo; lo=hi; hi=t; }   // keep ordered if thumbs cross
+  state.tw.lo=lo; state.tw.hi=hi;
+  updateTimeWindowUI();
+  renderAll();
+}
+(function wireTimeWindow(){
+  const min=$('twMin'), max=$('twMax');
+  if(!min) return;
+  min.addEventListener('input',onTimeWindowChange);
+  max.addEventListener('input',onTimeWindowChange);
+  $('twReset').addEventListener('click',()=>{
+    state.tw.lo=state.tw.min; state.tw.hi=state.tw.max;
+    $('twMin').value=state.tw.min; $('twMax').value=state.tw.max;
+    updateTimeWindowUI(); renderAll();
+  });
+})();
 function persist(){
   try{ localStorage.setItem('wsd_editor',JSON.stringify({
     headers:state.headers, map:state.map, sort:state.sort,
     colOrder:state.colOrder, colWidth:state.colWidth, dirty:[...state.dirty],
-    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, labelOpts:state.labelOpts,
+    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, heatOn:state.heatOn, labelOpts:state.labelOpts,
     rows:state.rows.map(r=>{ const {_marker,...rest}=r; return rest; })
   })); }catch(e){}
 }
@@ -2168,12 +2291,14 @@ function restore(){
       state.headers=s.headers; state.map=Object.assign(state.map,s.map); if(s.sort) state.sort=s.sort;
       if(s.colOrder) state.colOrder=s.colOrder; if(s.colWidth) state.colWidth=s.colWidth;
       state.colonyOn=false;   // colonies only valid on specimens tab; app opens on sightings
+      if(typeof s.heatOn==='boolean') state.heatOn=s.heatOn;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
       state.rows.forEach(r=>{ if(!r._key||!r._orig) snapshotKey(r); });
       if(s.dirty) state.dirty=new Set(s.dirty);
       if(window.syncSdCtl) syncSdCtl();
+      initTimeWindow();
       renderAll(); updateSaveBar(); return true;
     }
   }catch(e){}
