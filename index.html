@@ -143,7 +143,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 .leaflet-tooltip.sd-label{background:rgba(14,44,60,.92);border:1px solid var(--line);color:var(--sand);font-family:var(--ui);font-size:10px;font-weight:500;padding:2px 6px;border-radius:4px;box-shadow:none}
 .leaflet-tooltip.sd-label::before{display:none}
 .leaflet-tooltip.sd-perm{background:rgba(6,20,29,.82);font-weight:600}
-.colony-tag{font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:.04em;color:#fff;text-shadow:0 0 3px #000,0 0 5px var(--coral),0 0 5px #000;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
+.colony-tag{font-family:var(--ui);font-size:14px;font-weight:700;letter-spacing:.04em;color:#fff;text-shadow:0 0 3px #000,0 0 5px var(--coral),0 0 5px #000;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
 
 /* sightings map control (colonies / pin labels / colour legend) */
 .sd-ctl{background:var(--shelf-2);border:1px solid var(--line);border-radius:9px;padding:8px 11px 9px;font-family:var(--ui);color:var(--sand);box-shadow:0 3px 12px rgba(0,0,0,.45);min-width:188px;margin-bottom:8px}
@@ -583,7 +583,7 @@ const state = {
   headers:[], rows:[],
   map:{lat:null,lng:null,id:null,sightingId:null,label:null,date:null,depth:null,count:null,sex:null,site:null,comments:null,observer:null,eggs:null,resight:null,waiting:null,position:null},
   selId:null, pickMode:false, markerLayer:null, colonyLayer:null,
-  colonyOn:false, colonyRadius:200, sexDominanceOn:false, domIds:new Set(),
+  colonyOn:false, colonyRadius:200, sexDominanceOn:true, domIds:new Set(),
   moveMode:false, pendingMove:null,
   specimenCount:null,   // data-row count of the Specimens tab (fetched separately)
   sightings:null,       // {rows,headers,cols} from the raw Sightings tab (event-level, for dashboard)
@@ -713,9 +713,8 @@ state.colonyLayer = L.layerGroup().addTo(map);
   const Ctl=L.Control.extend({options:{position:'topright'},onAdd:function(){
     const d=L.DomUtil.create('div','sd-ctl');
     d.innerHTML='<label class="hd"><input type="checkbox" id="colonyChk"'+(state.colonyOn?' checked':'')+'> Colonies (areas)</label>'
+      +'<div class="domhint">sex-dominant colonies highlighted</div>'
       +`<div class="op"><span>Range</span><input id="colonyR" type="range" min="50" max="500" step="10" value="${state.colonyRadius}"><b id="colonyRv">${state.colonyRadius} m</b></div>`
-      +`<label class="lblrow" id="domRow"><input type="checkbox" id="domChk"${state.sexDominanceOn?' checked':''}> Highlight sex-dominant colonies</label>`
-      +'<div class="domhint">≥4 sexed specimens, one sex 2:1+ → pins enlarged & outlined</div>'
       +`<label class="lblrow" id="moveRow" style="margin-top:8px;border-top:1px solid var(--line);padding-top:9px"><input type="checkbox" id="moveChk"${state.moveMode?' checked':''}> Move pins (drag to reposition)</label>`
       +'<div class="domhint">drag a pin, then confirm the new spot</div>'
       +'<details><summary>Pin labels</summary>'
@@ -729,7 +728,6 @@ state.colonyLayer = L.layerGroup().addTo(map);
     const rng=d.querySelector('#colonyR'), rv=d.querySelector('#colonyRv');
     rng.addEventListener('input',()=>{ state.colonyRadius=+rng.value; rv.textContent=rng.value+' m'; renderColonies(); renderMarkers(); updateStats(); });
     rng.addEventListener('change',persist);
-    d.querySelector('#domChk').addEventListener('change',e=>{ state.sexDominanceOn=e.target.checked; renderColonies(); renderMarkers(); persist(); });
     d.querySelector('#moveChk').addEventListener('change',e=>{ state.moveMode=e.target.checked; renderMarkers();
       toast(state.moveMode?'Move mode on — drag a pin to reposition it':'Move mode off'); });
     d.querySelectorAll('input[data-lbl]').forEach(cb=>cb.addEventListener('change',()=>{
@@ -738,7 +736,6 @@ state.colonyLayer = L.layerGroup().addTo(map);
     // keep control inputs in sync if prefs are restored after the control is built
     window.syncSdCtl=()=>{
       d.querySelector('#colonyChk').checked=state.colonyOn;
-      d.querySelector('#domChk').checked=state.sexDominanceOn;
       d.querySelector('#moveChk').checked=state.moveMode;
       rng.value=state.colonyRadius; rv.textContent=state.colonyRadius+' m';
       d.querySelectorAll('input[data-lbl]').forEach(cb=>{ cb.checked=!!state.labelOpts[cb.dataset.lbl]; });
@@ -752,7 +749,6 @@ state.colonyLayer = L.layerGroup().addTo(map);
   try{ const s=JSON.parse(localStorage.getItem('wsd_editor')||'null');
     if(s){
       if(typeof s.colonyOn==='boolean') state.colonyOn=s.colonyOn;
-      if(typeof s.sexDominanceOn==='boolean') state.sexDominanceOn=s.sexDominanceOn;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       if(window.syncSdCtl) syncSdCtl();
@@ -2078,7 +2074,7 @@ function persist(){
   try{ localStorage.setItem('wsd_editor',JSON.stringify({
     headers:state.headers, map:state.map, sort:state.sort,
     colOrder:state.colOrder, colWidth:state.colWidth, dirty:[...state.dirty],
-    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, sexDominanceOn:state.sexDominanceOn, labelOpts:state.labelOpts,
+    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, labelOpts:state.labelOpts,
     rows:state.rows.map(r=>{ const {_marker,...rest}=r; return rest; })
   })); }catch(e){}
 }
@@ -2088,7 +2084,6 @@ function restore(){
       state.headers=s.headers; state.map=Object.assign(state.map,s.map); if(s.sort) state.sort=s.sort;
       if(s.colOrder) state.colOrder=s.colOrder; if(s.colWidth) state.colWidth=s.colWidth;
       if(typeof s.colonyOn==='boolean') state.colonyOn=s.colonyOn;
-      if(typeof s.sexDominanceOn==='boolean') state.sexDominanceOn=s.sexDominanceOn;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
