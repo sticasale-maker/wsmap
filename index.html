@@ -140,7 +140,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 .leaflet-tooltip.sd-label{background:rgba(14,44,60,.92);border:1px solid var(--line);color:var(--sand);font-family:var(--ui);font-size:10px;font-weight:500;padding:2px 6px;border-radius:4px;box-shadow:none}
 .leaflet-tooltip.sd-label::before{display:none}
 .leaflet-tooltip.sd-perm{background:rgba(6,20,29,.82);font-weight:600}
-.colony-tag{font-family:var(--ui);font-size:9.5px;font-weight:600;letter-spacing:.04em;color:var(--gold);text-shadow:0 0 4px #000,0 0 4px #000;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
+.colony-tag{font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:.04em;color:#fff;text-shadow:0 0 3px #000,0 0 5px var(--coral),0 0 5px #000;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
 
 /* sightings map control (colonies / pin labels / colour legend) */
 .sd-ctl{background:var(--shelf-2);border:1px solid var(--line);border-radius:9px;padding:8px 11px 9px;font-family:var(--ui);color:var(--sand);box-shadow:0 3px 12px rgba(0,0,0,.45);min-width:188px;margin-bottom:8px}
@@ -1056,17 +1056,20 @@ function renderColonies(){
   if(!state.colonyLayer) return;
   state.colonyLayer.clearLayers();
   if(!state.colonyOn) return;
+  const C=var_('--coral');                 // high-contrast colour for colony areas
   let count=0;
   computeColonies().forEach(g=>{
     count++;
     const latlngs=g.map(p=>[p.lat,p.lng]);
     if(g.length===2){
       // two points: draw a capsule-ish pair of buffered circles + connector
-      L.polyline(latlngs,{color:var_('--gold'),weight:2,opacity:.55,dashArray:'4 4',interactive:false}).addTo(state.colonyLayer);
-      latlngs.forEach(ll=>L.circle(ll,{radius:state.colonyRadius/2,color:var_('--gold'),weight:1.5,opacity:.6,fillColor:var_('--gold'),fillOpacity:.12,interactive:false}).addTo(state.colonyLayer));
+      L.polyline(latlngs,{color:C,weight:3,opacity:.85,dashArray:'5 5',interactive:false}).addTo(state.colonyLayer);
+      latlngs.forEach(ll=>L.circle(ll,{radius:state.colonyRadius/2,color:C,weight:2.5,opacity:.9,fillColor:C,fillOpacity:.3,interactive:false}).addTo(state.colonyLayer));
     } else {
       const poly=hull(latlngs);
-      L.polygon(poly,{color:var_('--gold'),weight:2,opacity:.7,fillColor:var_('--gold'),fillOpacity:.14,interactive:false}).addTo(state.colonyLayer);
+      // soft outer glow ring under the main polygon
+      L.polygon(poly,{color:C,weight:7,opacity:.22,fill:false,interactive:false,lineJoin:'round'}).addTo(state.colonyLayer);
+      L.polygon(poly,{color:C,weight:3,opacity:.95,fillColor:C,fillOpacity:.32,interactive:false,lineJoin:'round'}).addTo(state.colonyLayer);
     }
     // count label at the centroid
     const c=latlngs.reduce((a,ll)=>[a[0]+ll[0],a[1]+ll[1]],[0,0]).map(v=>v/latlngs.length);
