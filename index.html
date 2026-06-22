@@ -553,6 +553,21 @@ function snapshotKey(row){
     lat:         state.map.lat ?String(row[state.map.lat] ??'').trim():'',
     lon:         state.map.lng ?String(row[state.map.lng] ??'').trim():''
   };
+  row._orig={}; state.headers.forEach(h=>{ row._orig[h]=row[h]??''; });
+}
+// only the fields the user actually changed — so we never overwrite (and corrupt)
+// untouched columns like the real date or full-precision coordinates
+function changedValues(r){
+  const o=r._orig||{}, v={};
+  [['specimen_id',state.map.id],['date',state.map.date],['lat',state.map.lat],['lon',state.map.lng],
+   ['depth',state.map.depth],['count',state.map.count],['sex',state.map.sex],['site',state.map.site],
+   ['comments',state.map.comments],['observer',state.map.observer],['resight',state.map.resight]
+  ].forEach(([key,col])=>{
+    if(!col) return;
+    const cur=String(r[col]??''), was=String(o[col]??'');
+    if(cur!==was) v[key]=r[col]??'';
+  });
+  return v;
 }
 // guarantee an editable comments column exists even if the view omits notes
 function ensureComments(){
@@ -1169,25 +1184,12 @@ function doSave(){
     state.dirty.clear(); renderGrid(); updateSaveBar();
     toast('Confirmed locally — no Sheet endpoint set'); return;
   }
-  const updates=rows.map(r=>({
-    match:r._key||{specimen_id:'',date:'',lat:'',lon:''},
-    values:{
-      specimen_id: state.map.id      ?r[state.map.id]      :undefined,
-      date:        state.map.date    ?r[state.map.date]    :undefined,
-      lat:         state.map.lat     ?r[state.map.lat]     :undefined,
-      lon:         state.map.lng     ?r[state.map.lng]     :undefined,
-      depth:       state.map.depth   ?r[state.map.depth]   :undefined,
-      count:       state.map.count   ?r[state.map.count]   :undefined,
-      sex:         state.map.sex     ?r[state.map.sex]     :undefined,
-      site:        state.map.site    ?r[state.map.site]    :undefined,
-      comments:    state.map.comments?r[state.map.comments]:undefined,
-      observer:    state.map.observer?r[state.map.observer]:undefined,
-      resight:     state.map.resight ?r[state.map.resight] :undefined
-    }
-  }));
+  const updates=rows.map(r=>({ match:r._key||{specimen_id:'',date:'',lat:'',lon:''}, values:changedValues(r) }))
+                    .filter(u=>Object.keys(u.values).length);
+  if(!updates.length){ state.dirty.clear(); updateSaveBar(); renderGrid(); toast('No actual field changes to save'); return; }
   const url=CONFIG.saveEndpoint+'?payload='+encodeURIComponent(JSON.stringify({action:'update',updates}));
   if(url.length>7500){ toast('Too many edits at once — save them in smaller batches'); return; }
-  toast(`Saving ${rows.length} ${rows.length===1?'row':'rows'}…`);
+  toast(`Saving ${updates.length} ${updates.length===1?'row':'rows'}…`);
   jsonp(url).then(res=>{
     if(!res || res.ok===false){ toast('Save failed: '+((res&&res.error)||'no response from the script')); return; }
     const n=res.updated||0;
@@ -1229,7 +1231,7 @@ function restore(){
       state.headers=s.headers; state.map=Object.assign(state.map,s.map); if(s.sort) state.sort=s.sort;
       if(s.colOrder) state.colOrder=s.colOrder; if(s.colWidth) state.colWidth=s.colWidth;
       state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
-      state.rows.forEach(r=>{ if(!r._key) snapshotKey(r); });
+      state.rows.forEach(r=>{ if(!r._key||!r._orig) snapshotKey(r); });
       if(s.dirty) state.dirty=new Set(s.dirty);
       renderAll(); updateSaveBar(); return true;
     }
