@@ -644,6 +644,8 @@ function bathyRefresh(){
   });
 }
 map.on('moveend zoomend resize', bathyRefresh);
+// re-fan overlapping pins after a zoom so the spread stays a constant on-screen size
+map.on('zoomend', ()=>{ if(state.rows&&state.rows.length) renderMarkers(); });
 bathyRefresh();
 (function(){
   const Ctl=L.Control.extend({options:{position:'topright'},onAdd:function(){
@@ -1278,20 +1280,32 @@ function movePinIcon(color,emph){
 function refreshMarker(row){
   const lat=parseFloat(row[state.map.lat]), lng=parseFloat(row[state.map.lng]);
   if(row._marker){ state.markerLayer.removeLayer(row._marker); row._marker=null; }
+  if(row._leg){ state.markerLayer.removeLayer(row._leg); row._leg=null; }
   if(!isFinite(lat)||!isFinite(lng)) return;
+  // display position: spider-offset if this pin overlaps others, else true coords
+  const off=(state.spider&&state.spider[row._id])||{lat,lng};
+  const dLat=off.lat, dLng=off.lng;
+  const spread=(Math.abs(dLat-lat)>1e-9||Math.abs(dLng-lng)>1e-9);
   const sel=row._id===state.selId || (state.specSel&&state.specSel.has(row._id));
   const emph=state.domIds&&state.domIds.has(row._id);   // pin inside a sex-dominant colony
   const perm=anyLabelOpt(), txt=perm?pinLabel(row):labelFor(row);
+  // faint leader line from the offset pin back to the real location
+  if(spread){
+    row._leg=L.polyline([[lat,lng],[dLat,dLng]],{color:'#7fb3cc',weight:1,opacity:.5,interactive:false,dashArray:'2,2'});
+    row._leg.addTo(state.markerLayer);
+  }
   let m;
   if(state.moveMode){
-    // draggable pin marker — drop triggers a confirm before the coords are kept
-    m=L.marker([lat,lng],{draggable:true,icon:movePinIcon(sel?var_('--coral'):sexColor(row),emph),zIndexOffset:sel?1000:0});
+    // draggable pin marker — drop triggers a confirm before the coords are kept.
+    // starts at the display (offset) spot, but the move is measured/saved from
+    // the row's REAL coordinate, so dragging an offset pin writes a true fix.
+    m=L.marker([dLat,dLng],{draggable:true,icon:movePinIcon(sel?var_('--coral'):sexColor(row),emph),zIndexOffset:sel?1000:0});
     m.on('dragstart',()=>{ m._from=[lat,lng]; });
     m.on('dragend',()=>{ const p=m.getLatLng(); askMove(row._id,m._from,[p.lat,p.lng]); });
     if(txt) m.bindTooltip(txt,{className:'sd-label'+(perm?' sd-perm':''),direction:'top',offset:[0,-22],permanent:perm});
     m.on('click',()=>selectRow(row._id,true,true));
   } else {
-    m=L.circleMarker([lat,lng],{
+    m=L.circleMarker([dLat,dLng],{
       radius:sel?8:(emph?8:5.5), color:sel?var_('--coral'):(emph?'#ffffff':'#06141d'), weight:sel?2.5:(emph?2.5:1.5),
       fillColor:sel?var_('--coral'):sexColor(row), fillOpacity:.95
     });
@@ -1300,7 +1314,7 @@ function refreshMarker(row){
   }
   m.addTo(state.markerLayer); row._marker=m;
 }
-function renderMarkers(){ state.markerLayer.clearLayers(); state.rows.forEach(r=>{r._marker=null;refreshMarker(r);}); }
+function renderMarkers(){ state.markerLayer.clearLayers(); state.spider=computeSpiderOffsets(); state.rows.forEach(r=>{r._marker=null;r._leg=null;refreshMarker(r);}); }
 
 /* ---- COLONIES: cluster mapped sightings within state.colonyRadius metres ---- */
 function haversine(a,b){
@@ -1308,6 +1322,44 @@ function haversine(a,b){
   const dLat=toR(b[0]-a[0]), dLng=toR(b[1]-a[1]);
   const s=Math.sin(dLat/2)**2+Math.cos(toR(a[0]))*Math.cos(toR(b[0]))*Math.sin(dLng/2)**2;
   return 2*R*Math.asin(Math.sqrt(s));
+}
+/* ---- SPIDERFY: fan out pins that sit (almost) on top of each other so each
+   is individually visible and clickable. Purely a DISPLAY offset — the row's
+   true lat/lng are never touched, so dragging in Move mode still writes real
+   coordinates. Recomputed on every render (and on zoom) in pixel space, so the
+   spread stays a constant size on screen regardless of zoom level.            */
+function computeSpiderOffsets(){
+  // group rows by near-identical true coordinates (within ~3 m)
+  const pts=state.rows
+    .map(r=>({r,lat:parseFloat(r[state.map.lat]),lng:parseFloat(r[state.map.lng])}))
+    .filter(p=>isFinite(p.lat)&&isFinite(p.lng));
+  const groups=[]; const TOL=3; // metres
+  pts.forEach(p=>{
+    let g=groups.find(grp=>haversine([grp.lat,grp.lng],[p.lat,p.lng])<TOL);
+    if(!g){ g={lat:p.lat,lng:p.lng,items:[]}; groups.push(g); }
+    g.items.push(p);
+  });
+  const offsets={};   // row._id -> {lat,lng} display position
+  const z=map.getZoom();
+  groups.forEach(g=>{
+    if(g.items.length<2){ offsets[g.items[0].r._id]={lat:g.items[0].lat,lng:g.items[0].lng}; return; }
+    // arrange on one or more concentric rings around the shared centre
+    const centre=map.project([g.lat,g.lng],z);
+    const n=g.items.length;
+    const baseR=26;                 // px radius of the first ring (enough to clear ~11px pins)
+    const perRing=8;                // pins per ring before stepping outward
+    g.items.forEach((it,i)=>{
+      const ring=Math.floor(i/perRing);
+      const inRing=Math.min(perRing,n-ring*perRing);
+      const idx=i-ring*perRing;
+      const rad=baseR+ring*22;
+      const ang=(2*Math.PI*idx/inRing) - Math.PI/2;   // start at top
+      const px=L.point(centre.x+rad*Math.cos(ang), centre.y+rad*Math.sin(ang));
+      const ll=map.unproject(px,z);
+      offsets[it.r._id]={lat:ll.lat,lng:ll.lng};
+    });
+  });
+  return offsets;
 }
 // single-link clustering: any two points within the radius join the same colony
 function computeColonies(){
@@ -1594,7 +1646,7 @@ function doMove(){
     row[state.map.lng]=pm.to[1].toFixed(6);
     if(state.map.position){ row[state.map.position]='estimated (map)'; }   // dragged → estimated
     markDirty(row._id);
-    refreshMarker(row); renderColonies(); updateStats(); persist();
+    renderMarkers(); renderColonies(); updateStats(); persist();
     toast('Moved — remember to Save changes');
   }
   state.pendingMove=null; $('cscrim').classList.remove('show'); $('mvmodal').classList.remove('show');
