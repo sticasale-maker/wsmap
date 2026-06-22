@@ -230,6 +230,48 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 #svmodal p{font-size:12.5px;color:var(--sand-dim);line-height:1.5;margin-bottom:6px}
 #svmodal .cm-foot{display:flex;gap:9px;margin-top:14px}
 #svmodal .cm-foot .btn{flex:1;justify-content:center;padding:9px}
+
+/* ---- population dashboard ---- */
+#dashscrim{display:none;position:fixed;inset:0;background:rgba(3,12,18,.66);z-index:1500;backdrop-filter:blur(2px)}
+#dashscrim.show{display:block}
+#dashmodal{display:none;position:fixed;top:32px;left:50%;transform:translateX(-50%);z-index:1510;
+  width:min(980px,calc(100vw - 32px));max-height:calc(100vh - 64px);background:var(--ink);
+  border:1px solid var(--isobath-dim);border-radius:14px;box-shadow:0 28px 80px rgba(0,0,0,.65);
+  display:none;flex-direction:column;overflow:hidden}
+#dashmodal.show{display:flex}
+.dash-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:15px 20px;
+  border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--shelf),var(--ink))}
+.dash-head h3{font-family:var(--disp);font-weight:600;font-size:19px;letter-spacing:-.01em}
+.dash-head h3 em{font-style:italic;color:var(--gold)}
+.dash-sub{font-size:11.5px;color:var(--sand-dim);margin-top:4px;font-variant-numeric:tabular-nums}
+.dash-x{color:var(--sand-dim);font-size:18px;line-height:1;padding:3px 8px;border-radius:7px}
+.dash-x:hover{color:var(--coral);background:var(--shelf)}
+.dash-body{padding:18px 20px 22px;overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:var(--shelf);border:1px solid var(--line);border-radius:11px;padding:14px 15px 12px;display:flex;flex-direction:column;min-width:0}
+.card.wide{grid-column:1 / -1}
+.card h4{font-family:var(--ui);font-size:12.5px;font-weight:600;color:var(--sand);letter-spacing:.01em;display:flex;align-items:baseline;gap:8px}
+.card h4 .unit{font-size:9.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.card .note{font-size:10px;color:var(--faint);line-height:1.45;margin-top:9px;font-style:italic}
+.card .chartwrap{margin-top:11px;width:100%}
+.card svg{display:block;width:100%;height:auto;overflow:visible;font-variant-numeric:tabular-nums}
+.card .empty-c{font-size:11.5px;color:var(--sand-dim);padding:18px 4px;text-align:center}
+.cx-axis text,.cy-axis text{font-family:var(--ui);font-size:9px;fill:var(--faint)}
+.cgrid{stroke:var(--line);stroke-width:1}
+.cbar{transition:opacity .12s}
+.clabel{font-family:var(--ui);font-size:9px;fill:var(--sand-dim)}
+.cval{font-family:var(--ui);font-size:9px;font-weight:600;fill:var(--sand)}
+.legend-inline{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:10px;color:var(--sand-dim)}
+.legend-inline span{display:inline-flex;align-items:center;gap:5px}
+.legend-inline i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.kpi-row{display:flex;gap:18px;flex-wrap:wrap;margin-top:4px}
+.kpi{display:flex;flex-direction:column;gap:2px}
+.kpi b{font-family:var(--disp);font-size:22px;font-weight:600;color:var(--isobath);line-height:1}
+.kpi span{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+@media(max-width:720px){
+  .dash-body{grid-template-columns:1fr}
+  .card.wide{grid-column:auto}
+  #dashmodal{top:8px;max-height:calc(100vh - 16px)}
+}
 .svlist{max-height:168px;overflow:auto;font-size:11.5px;color:var(--sand);line-height:1.75;
   font-variant-numeric:tabular-nums;border-top:1px solid var(--line);margin-top:10px;padding-top:9px}
 
@@ -303,6 +345,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 
     <div class="toolbar">
       <button class="btn primary" id="btnNew"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New sighting</button>
+      <button class="btn" id="btnDash"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM14 7h6V4h-6zM4 20h6v-3H4z"/></svg>Dashboard</button>
       <div class="tool-spacer"></div>
       <div class="search">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
@@ -402,6 +445,19 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 
 <div id="connbanner"><span class="cb-dot"></span><span class="cb-msg"></span><button class="cb-retry" id="connRetry">Retry</button></div>
 <div id="toast"></div>
+
+<!-- dashboard overlay -->
+<div id="dashscrim"></div>
+<div id="dashmodal" role="dialog" aria-label="Population dashboard">
+  <div class="dash-head">
+    <div>
+      <h3>Population <em>dashboard</em></h3>
+      <div class="dash-sub" id="dashSub">—</div>
+    </div>
+    <button class="dash-x" id="dashClose" aria-label="Close">✕</button>
+  </div>
+  <div class="dash-body" id="dashBody"></div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
@@ -1371,6 +1427,178 @@ document.getElementById('btnExport').addEventListener('click',()=>{
 });
 
 /* ============================================================================
+   POPULATION DASHBOARD
+   Charts are hand-drawn SVG (no external chart lib), themed to the app palette.
+   All panels read state.rows (the map_latest view). Where the latest-per-animal
+   view can't answer a question fully (e.g. resight intervals), the panel says so.
+   ========================================================================== */
+const DASH={ scrim:document.getElementById('dashscrim'), modal:document.getElementById('dashmodal'),
+  body:document.getElementById('dashBody'), sub:document.getElementById('dashSub') };
+const CC={ male:()=>var_('--isobath'), female:()=>var_('--coral'), juv:()=>var_('--gold'),
+  unknown:()=>var_('--slate'), gps:()=>var_('--isobath'), est:()=>var_('--gold'), bar:()=>var_('--isobath-dim') };
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function monthOf(v){ const m=/^(\d{4})-(\d{2})/.exec(String(v??'').trim()); return m?(+m[2]-1):null; }
+function yearOf(v){ const m=/^(\d{4})/.exec(String(v??'').trim()); return m?+m[1]:null; }
+
+/* ---- generic vertical bar chart → returns an <svg> string ---- */
+function barChart(data, opt){
+  opt=opt||{};
+  const W=opt.w||440, H=opt.h||200, padL=opt.padL||30, padR=10, padT=10, padB=opt.padB||34;
+  const iw=W-padL-padR, ih=H-padT-padB;
+  const max=opt.max||Math.max(1,...data.map(d=>d.stack?d.stack.reduce((a,s)=>a+s.v,0):d.v));
+  const n=data.length||1, gap=opt.gap!=null?opt.gap:0.28;
+  const bw=iw/n*(1-gap), step=iw/n;
+  const ticks=opt.ticks||4;
+  let g='';
+  // y gridlines + labels
+  for(let t=0;t<=ticks;t++){ const val=max*t/ticks, y=padT+ih-ih*t/ticks;
+    g+=`<line class="cgrid" x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" opacity="${t===0?0.9:0.4}"/>`;
+    g+=`<text class="cy-axis" x="${padL-5}" y="${(y+3).toFixed(1)}" text-anchor="end">${Math.round(val)}</text>`;
+  }
+  data.forEach((d,i)=>{
+    const x=padL+step*i+(step-bw)/2;
+    if(d.stack){
+      let acc=0;
+      d.stack.forEach(s=>{
+        if(s.v<=0) return;
+        const h=ih*s.v/max, y=padT+ih-h-ih*acc/max; acc+=s.v;
+        g+=`<rect class="cbar" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${s.c}"><title>${esc(d.label)} · ${esc(s.name)}: ${s.v}</title></rect>`;
+      });
+      const tot=d.stack.reduce((a,s)=>a+s.v,0);
+      if(tot>0) g+=`<text class="cval" x="${(x+bw/2).toFixed(1)}" y="${(padT+ih-ih*tot/max-4).toFixed(1)}" text-anchor="middle">${tot}</text>`;
+    } else {
+      const h=ih*d.v/max, y=padT+ih-h;
+      g+=`<rect class="cbar" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${d.c||CC.bar()}"><title>${esc(d.label)}: ${d.v}</title></rect>`;
+      if(d.v>0) g+=`<text class="cval" x="${(x+bw/2).toFixed(1)}" y="${(y-4).toFixed(1)}" text-anchor="middle">${d.v}</text>`;
+    }
+    g+=`<text class="clabel" x="${(x+bw/2).toFixed(1)}" y="${(H-padB+13).toFixed(1)}" text-anchor="middle">${esc(d.label)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">${g}</svg>`;
+}
+function legend(items){ return `<div class="legend-inline">${items.map(([c,n])=>`<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}</div>`; }
+function card(title,unit,inner,note){
+  return `<div class="card${title._wide?' wide':''}"><h4>${esc(title.t||title)}${unit?` <span class="unit">${esc(unit)}</span>`:''}</h4>`
+    +`<div class="chartwrap">${inner}</div>${note?`<div class="note">${note}</div>`:''}</div>`;
+}
+
+/* ---------- PANEL 1: depth distribution ---------- */
+function panelDepth(){
+  const depths=state.rows.map(r=>parseFloat(r[state.map.depth])).filter(v=>isFinite(v)&&v>0);
+  if(!depths.length) return card('Depth distribution','metres','<div class="empty-c">No depth values recorded.</div>');
+  const lo=Math.floor(Math.min(...depths)/2)*2, hi=Math.ceil(Math.max(...depths)/2)*2;
+  const bins=[];
+  for(let b=lo;b<hi;b+=2) bins.push({label:`${b}`,v:0,c:CC.bar(),lo:b,hi:b+2});
+  depths.forEach(v=>{ const idx=Math.min(bins.length-1,Math.floor((v-lo)/2)); bins[idx].v++; });
+  const inner=barChart(bins,{gap:0.12,padB:34});
+  return card('Depth distribution','2 m bins · '+depths.length+' sightings',inner,
+    'Depth at which sightings were logged. The 16–26 m band is the open-coast reef target zone.');
+}
+
+/* ---------- PANEL 2: sightings by month ---------- */
+function panelMonth(){
+  const counts=new Array(12).fill(0); let nd=0;
+  state.rows.forEach(r=>{ const m=monthOf(r[state.map.date]); if(m!=null){counts[m]++;} else nd++; });
+  if(!counts.some(Boolean)) return card('Sightings by month','seasonality','<div class="empty-c">No usable dates.</div>');
+  const data=counts.map((v,i)=>({label:MONTHS[i],v,c:CC.bar()}));
+  return card('Sightings by month','count',barChart(data,{gap:0.2,w:440,padB:34}),
+    'When animals were found, all years pooled. Shaped partly by dive effort — read peaks as “when we looked”, not only “when they’re present”.');
+}
+
+/* ---------- PANEL 3: breeding phenology (egg-carrying by month) ---------- */
+function panelBreeding(){
+  if(!state.map.eggs) return card('Brooding season','egg-carrying males','<div class="empty-c">No eggs column found.</div>');
+  const eggMonth=new Array(12).fill(0), allMonth=new Array(12).fill(0);
+  state.rows.forEach(r=>{ const m=monthOf(r[state.map.date]); if(m==null) return; allMonth[m]++;
+    if(isResighted(r[state.map.eggs])) eggMonth[m]++; });   // reuse the Y/1/true/x truthy test
+  const total=eggMonth.reduce((a,b)=>a+b,0);
+  if(!total) return card('Brooding season','egg-carrying males','<div class="empty-c">No egg-carrying records yet.</div>');
+  const data=eggMonth.map((v,i)=>({label:MONTHS[i],v,c:CC.male()}));
+  return card('Brooding season','egg-carrying records · '+total,barChart(data,{gap:0.2,padB:34}),
+    'Months in which brooding (egg-carrying) males were recorded — a direct, effort-robust signal of the local breeding window.');
+}
+
+/* ---------- PANEL 4: resight / site fidelity ---------- */
+function panelFidelity(){
+  const rCol=state.map.resight;
+  if(!rCol) return card('Resights & site fidelity','residency','<div class="empty-c">No resight flag found.</div>');
+  // animals present in this view, and how many are flagged as resights
+  const idCol=state.map.id;
+  const byId=new Map();
+  state.rows.forEach(r=>{ const id=idCol?String(r[idCol]??'').trim():''; if(!id) return;
+    if(!byId.has(id)) byId.set(id,[]); byId.get(id).push(r); });
+  const animals=byId.size;
+  const resightRows=state.rows.filter(r=>isResighted(r[rCol])).length;
+  const animalsResighted=[...byId.values()].filter(rows=>rows.some(r=>isResighted(r[rCol]))).length;
+  // any animals with 2+ dated rows in THIS view → can show an interval
+  const intervals=[];
+  byId.forEach(rows=>{ const ds=rows.map(r=>r[state.map.date]).filter(Boolean).map(s=>new Date(s)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+    for(let i=1;i<ds.length;i++) intervals.push(Math.round((ds[i]-ds[i-1])/86400000)); });
+  const kpi=`<div class="kpi-row">`
+    +`<div class="kpi"><b>${animals}</b><span>animals (IDed)</span></div>`
+    +`<div class="kpi"><b>${animalsResighted}</b><span>seen again</span></div>`
+    +`<div class="kpi"><b>${animals?Math.round(100*animalsResighted/animals):0}%</b><span>resight rate</span></div>`
+    +`</div>`;
+  let chartOrNote;
+  if(intervals.length){
+    // histogram of intervals in ~90-day bins
+    const maxd=Math.max(...intervals), bw=90, nb=Math.max(1,Math.ceil((maxd+1)/bw));
+    const bins=[]; for(let b=0;b<nb;b++) bins.push({label:`${b*3}–${b*3+3}`,v:0,c:CC.bar()});
+    intervals.forEach(d=>{ bins[Math.min(nb-1,Math.floor(d/bw))].v++; });
+    chartOrNote=barChart(bins,{gap:0.18,padB:34})+`<div class="note">Months between successive sightings of the same animal (this view holds ${intervals.length} such gaps).</div>`;
+  } else {
+    chartOrNote=`<div class="note">The map_latest view keeps one row per animal, so it can’t show the gap between a first and later sighting. The resight rate above still holds; for full interval analysis the dashboard would need to read the raw Sightings tab.</div>`;
+  }
+  return card({t:'Resights & site fidelity',_wide:false},'residency',kpi+chartOrNote);
+}
+
+/* ---------- PANEL 5: GPS vs estimated position ---------- */
+function panelPosition(){
+  const pCol=state.map.position;
+  if(!pCol) return card('Position source','data quality','<div class="empty-c">No position-source column.</div>');
+  let gps=0,est=0,other=0;
+  state.rows.forEach(r=>{ const v=String(r[pCol]??'').toLowerCase();
+    if(/gps/.test(v)) gps++; else if(/est|map/.test(v)) est++; else if(v.trim()) other++; });
+  const tot=gps+est+other;
+  if(!tot) return card('Position source','data quality','<div class="empty-c">No position-source values.</div>');
+  // a single 100% stacked horizontal bar
+  const W=440,H=46,pad=2,iw=W-pad*2;
+  const segs=[['GPS',gps,CC.gps()],['Estimated',est,CC.est()],['Other',other,CC.unknown()]].filter(s=>s[1]>0);
+  let x=pad,g='';
+  segs.forEach(([n,v,c])=>{ const w=iw*v/tot; g+=`<rect x="${x.toFixed(1)}" y="8" width="${w.toFixed(1)}" height="26" fill="${c}" rx="2"><title>${n}: ${v} (${Math.round(100*v/tot)}%)</title></rect>`;
+    if(w>40) g+=`<text x="${(x+w/2).toFixed(1)}" y="25" text-anchor="middle" class="cval" fill="#06141d">${Math.round(100*v/tot)}%</text>`; x+=w; });
+  const svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
+  return card('Position source','share of '+tot+' records',svg+legend(segs.map(s=>[s[2],s[0]])),
+    'GPS points are field-verified; estimated points were placed on the map. Treat estimated locations as approximate when reading the map.');
+}
+
+/* ---------- PANEL 6: observer contribution ---------- */
+function panelObserver(){
+  const oCol=state.map.observer;
+  if(!oCol) return card('Observer contribution','who logged what','<div class="empty-c">No observer column.</div>');
+  const m=new Map();
+  state.rows.forEach(r=>{ let v=String(r[oCol]??'').trim()||'—'; m.set(v,(m.get(v)||0)+1); });
+  const data=[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(([n,v])=>({label:n,v,c:CC.bar()}));
+  if(!data.length) return card('Observer contribution','who logged what','<div class="empty-c">No observers recorded.</div>');
+  return card('Observer contribution','sightings per observer',barChart(data,{gap:0.25,padB:40,w:440}),
+    'Sightings credited to each observer in the current view.');
+}
+
+function buildDashboard(){
+  const total=state.rows.length;
+  const mapped=state.rows.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
+  DASH.sub.textContent=`${total} sightings · ${mapped} mapped · ${(state.specimenCount!=null?state.specimenCount:buildSpecimens().length)} individuals`;
+  DASH.body.innerHTML=[panelDepth(),panelMonth(),panelBreeding(),panelFidelity(),panelPosition(),panelObserver()].join('');
+}
+function openDashboard(){ if(!state.rows.length){ toast('Load some sightings first'); return; }
+  buildDashboard(); DASH.scrim.classList.add('show'); DASH.modal.classList.add('show'); }
+function closeDashboard(){ DASH.scrim.classList.remove('show'); DASH.modal.classList.remove('show'); }
+document.getElementById('btnDash').addEventListener('click',openDashboard);
+document.getElementById('dashClose').addEventListener('click',closeDashboard);
+DASH.scrim.addEventListener('click',closeDashboard);
+
+/* ============================================================================
    SAVE CHANGES  (in-grid edits → confirm → write back to the Sightings tab)
    Inline edits are held locally and flagged "unsaved". Nothing reaches the
    Sheet until you press Save changes and confirm. Each edited row is matched
@@ -1524,6 +1752,7 @@ document.getElementById('viewToggle').addEventListener('click',()=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
+    if(DASH.modal.classList.contains('show')){ closeDashboard(); return; }
     if($('svmodal').classList.contains('show')){ closeSave(); return; }
     if($('cmodal').classList.contains('show')){ closeConfirm(); return; }
     if(state.pickMode){ cancelDrop(); return; }
