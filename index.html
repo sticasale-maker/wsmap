@@ -139,6 +139,27 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 
 .leaflet-tooltip.sd-label{background:rgba(14,44,60,.92);border:1px solid var(--line);color:var(--sand);font-family:var(--ui);font-size:10px;font-weight:500;padding:2px 6px;border-radius:4px;box-shadow:none}
 .leaflet-tooltip.sd-label::before{display:none}
+.leaflet-tooltip.sd-perm{background:rgba(6,20,29,.82);font-weight:600}
+.colony-tag{font-family:var(--ui);font-size:9.5px;font-weight:600;letter-spacing:.04em;color:var(--gold);text-shadow:0 0 4px #000,0 0 4px #000;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
+
+/* sightings map control (colonies / pin labels / colour legend) */
+.sd-ctl{background:var(--shelf-2);border:1px solid var(--line);border-radius:9px;padding:8px 11px 9px;font-family:var(--ui);color:var(--sand);box-shadow:0 3px 12px rgba(0,0,0,.45);min-width:188px;margin-bottom:8px}
+.sd-ctl label.hd{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;font-weight:500}
+.sd-ctl input[type=checkbox]{accent-color:var(--gold);width:14px;height:14px;cursor:pointer}
+.sd-ctl .op{margin-top:7px;display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
+.sd-ctl .op span{min-width:54px;flex:none}
+.sd-ctl .op input[type=range]{flex:1;accent-color:var(--gold);height:3px;cursor:pointer}
+.sd-ctl .op b{color:var(--gold);font-weight:600;font-variant-numeric:tabular-nums;min-width:42px;text-align:right;text-transform:none;letter-spacing:0}
+.sd-ctl details{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
+.sd-ctl details>summary{cursor:pointer;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);list-style:none;user-select:none}
+.sd-ctl details>summary::-webkit-details-marker{display:none}
+.sd-ctl details>summary:before{content:'\25B8 ';color:var(--faint)}
+.sd-ctl details[open]>summary{color:var(--sand-dim)}
+.sd-ctl details[open]>summary:before{content:'\25BE '}
+.sd-ctl .lblrow{display:flex;align-items:center;gap:7px;margin-top:6px;font-size:11px;color:var(--sand);cursor:pointer}
+.sd-ctl .lblrow input{accent-color:var(--isobath)}
+.sd-ctl .lrow{display:flex;align-items:center;gap:7px;margin-top:5px;font-size:10.5px;color:var(--sand)}
+.sd-ctl .ldot{width:11px;height:11px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.3)}
 
 /* draft pin for the new-sighting flow */
 .draft-pin{width:18px;height:18px;border-radius:50%;background:var(--coral);border:3px solid #fff;
@@ -222,6 +243,14 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 /* resight flag cell */
 .grid td.flagcell{text-align:center}
 .grid td.flagcell input{width:15px;height:15px;accent-color:var(--isobath);cursor:pointer;vertical-align:middle}
+.grid td.flagcell.waitflag input{accent-color:var(--gold)}
+
+/* rows still waiting for a SeadragonSearch ID — gold tint + amber rail */
+.grid tbody tr.await-ss td{background:#2e2410}
+.grid tbody tr.await-ss:hover td{background:#3a2d14}
+.grid tbody tr.await-ss td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
+.grid tbody tr.await-ss.sel td{background:#3c2410}
+.grid tbody tr.await-ss.sel td:first-child{box-shadow:inset 3px 0 0 var(--coral)}
 
 /* rows with unsaved edits — gold rail on the index cell */
 .grid tbody tr.dirty td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
@@ -259,7 +288,8 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
     <div class="l-head">
       <div class="l-title">Weedy Seadragon <em>sightings</em> <span class="badge">VIZ · editor</span></div>
       <div class="l-sub">
-        <span><b id="statTotal">0</b> records</span>
+        <span><b id="statTotal">0</b> sightings</span>
+        <span><b id="statIndiv">0</b> individuals</span>
         <span><b id="statMapped">0</b> mapped</span>
         <span><b id="statColonies">0</b> colonies (2+)</span>
       </div>
@@ -338,6 +368,7 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
     <div class="checks">
       <label class="chk"><input type="checkbox" id="smEggs"> Carrying eggs</label>
       <label class="chk"><input type="checkbox" id="smResight"> Re-sight</label>
+      <label class="chk"><input type="checkbox" id="smWaiting"> Waiting for SeadragonSearch ID</label>
     </div>
     <label>Comments<textarea id="smComments" placeholder="conditions, behaviour, anything notable…"></textarea></label>
   </div>
@@ -396,8 +427,10 @@ const CONFIG = {
 
 const state = {
   headers:[], rows:[],
-  map:{lat:null,lng:null,id:null,label:null,date:null,depth:null,count:null,sex:null,site:null,comments:null,observer:null,eggs:null,resight:null,position:null},
-  selId:null, pickMode:false, markerLayer:null,
+  map:{lat:null,lng:null,id:null,label:null,date:null,depth:null,count:null,sex:null,site:null,comments:null,observer:null,eggs:null,resight:null,waiting:null,position:null},
+  selId:null, pickMode:false, markerLayer:null, colonyLayer:null,
+  colonyOn:false, colonyRadius:200,
+  labelOpts:{id:true,date:false,resights:false,depth:false,position:false},
   sort:{col:null,dir:1},
   colOrder:null, colWidth:{}, specSel:new Set(),
   dirty:new Set()           // _id of rows edited in-grid, awaiting save to the Sheet
@@ -508,6 +541,56 @@ bathyRefresh();
 })();
 
 state.markerLayer = L.layerGroup().addTo(map);
+state.colonyLayer = L.layerGroup().addTo(map);
+
+/* ---- sightings control: colony areas · pin labels · colour legend ---- */
+(function(){
+  const SEX_LEGEND=[
+    [var_('--coral'),'Female'],
+    [var_('--isobath'),'Male'],
+    [var_('--gold'),'Juvenile'],
+    [var_('--slate'),'Unknown / unsexed']
+  ];
+  const LABEL_FIELDS=[['id','ID'],['date','Date'],['resights','# of resights'],['depth','Depth'],['position','Position source']];
+  const Ctl=L.Control.extend({options:{position:'topright'},onAdd:function(){
+    const d=L.DomUtil.create('div','sd-ctl');
+    d.innerHTML='<label class="hd"><input type="checkbox" id="colonyChk"'+(state.colonyOn?' checked':'')+'> Colonies (areas)</label>'
+      +`<div class="op"><span>Range</span><input id="colonyR" type="range" min="50" max="500" step="10" value="${state.colonyRadius}"><b id="colonyRv">${state.colonyRadius} m</b></div>`
+      +'<details><summary>Pin labels</summary>'
+      +LABEL_FIELDS.map(([k,n])=>`<label class="lblrow"><input type="checkbox" data-lbl="${k}"${state.labelOpts[k]?' checked':''}> ${n}</label>`).join('')
+      +'</details>'
+      +'<details><summary>Pin colours</summary>'
+      +SEX_LEGEND.map(([c,n])=>`<div class="lrow"><span class="ldot" style="background:${c}"></span>${n}</div>`).join('')
+      +'</details>';
+    L.DomEvent.disableClickPropagation(d);L.DomEvent.disableScrollPropagation(d);
+    d.querySelector('#colonyChk').addEventListener('change',e=>{ state.colonyOn=e.target.checked; renderColonies(); persist(); });
+    const rng=d.querySelector('#colonyR'), rv=d.querySelector('#colonyRv');
+    rng.addEventListener('input',()=>{ state.colonyRadius=+rng.value; rv.textContent=rng.value+' m'; if(state.colonyOn) renderColonies(); });
+    rng.addEventListener('change',persist);
+    d.querySelectorAll('input[data-lbl]').forEach(cb=>cb.addEventListener('change',()=>{
+      state.labelOpts[cb.dataset.lbl]=cb.checked; renderMarkers(); persist();
+    }));
+    // keep control inputs in sync if prefs are restored after the control is built
+    window.syncSdCtl=()=>{
+      d.querySelector('#colonyChk').checked=state.colonyOn;
+      rng.value=state.colonyRadius; rv.textContent=state.colonyRadius+' m';
+      d.querySelectorAll('input[data-lbl]').forEach(cb=>{ cb.checked=!!state.labelOpts[cb.dataset.lbl]; });
+    };
+    return d;
+  }});
+  map.addControl(new Ctl());
+})();
+// restore just the map-view prefs (colony / labels) immediately, independent of row data
+(function(){
+  try{ const s=JSON.parse(localStorage.getItem('wsd_editor')||'null');
+    if(s){
+      if(typeof s.colonyOn==='boolean') state.colonyOn=s.colonyOn;
+      if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
+      if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
+      if(window.syncSdCtl) syncSdCtl();
+    }
+  }catch(e){}
+})();
 
 /* ============================================================================
    COLUMN MAPPING
@@ -529,9 +612,11 @@ function autoMap(){
   state.map.observer= detect(h,[/observ/i,/diver/i,/recorder/i,/\bwho\b/i,/_by$/i,/^by$/i]);
   state.map.eggs    = detect(h,[/^eggs$/i,/egg/i]);
   state.map.resight = detect(h,[/resight/i,/re-?sight/i]);
+  state.map.waiting = detect(h,[/waiting.*ss|ss.*waiting/i,/await/i,/pending.*id|id.*pending/i,/no.*ss.?id|ss.?id.*pending/i,/waiting/i]);
   state.map.position= detect(h,[/position_source/i,/position/i,/source/i,/method/i]);
   ensureComments();
   ensureResight();
+  ensureWaiting();
 }
 // guarantee an editable resight flag column exists even if the view omits it
 function ensureResight(){
@@ -545,6 +630,18 @@ function ensureResight(){
 }
 // truthy test for the flag value coming from the Sheet
 function isResighted(v){ return /^(y|yes|true|1|✓|x)$/i.test(String(v??'').trim()); }
+// guarantee an editable "waiting for SeadragonSearch ID" flag column exists
+function ensureWaiting(){
+  if(state.map.waiting && state.headers.includes(state.map.waiting)) return;
+  if(!state.map.waiting){
+    if(!state.headers.includes('waiting_ss_id')) state.headers.push('waiting_ss_id');
+    state.map.waiting='waiting_ss_id';
+  } else if(!state.headers.includes(state.map.waiting)){
+    state.headers.push(state.map.waiting);
+  }
+}
+// same truthy test reused for the waiting flag
+function isWaiting(v){ return /^(y|yes|true|1|✓|x)$/i.test(String(v??'').trim()); }
 // immutable original key used to match this row back to its Sightings source row
 // a bare Sheets/Excel date serial → 'yyyy-mm-dd'; anything else passes through
 function serialToDate(v){
@@ -574,7 +671,8 @@ function changedValues(r){
   const o=r._orig||{}, v={};
   [['specimen_id',state.map.id],['date',state.map.date],['lat',state.map.lat],['lon',state.map.lng],
    ['depth',state.map.depth],['count',state.map.count],['sex',state.map.sex],['site',state.map.site],
-   ['comments',state.map.comments],['observer',state.map.observer],['resight',state.map.resight]
+   ['comments',state.map.comments],['observer',state.map.observer],['resight',state.map.resight],
+   ['waiting_ss_id',state.map.waiting]
   ].forEach(([key,col])=>{
     if(!col) return;
     const cur=String(r[col]??''), was=String(o[col]??'');
@@ -596,7 +694,7 @@ function ensureComments(){
    the pre-built label column is hidden (still used for map tooltips). */
 function orderedKeys(){
   const m=state.map;
-  const pref=[m.date,m.id,m.resight,m.depth,m.comments,m.lat,m.lng].filter(Boolean);
+  const pref=[m.date,m.id,m.resight,m.waiting,m.depth,m.comments,m.lat,m.lng].filter(Boolean);
   const seen=new Set(pref);
   return pref.concat(state.headers.filter(h=>!seen.has(h) && h!==m.label));
 }
@@ -691,7 +789,7 @@ function ingest(parsed,fit){
   state.dirty.clear();
   if(state.map.date) state.sort={col:state.map.date,dir:-1}; // newest first by default
   renderAll(); persist(); updateSaveBar();
-  toast(`Loaded ${state.rows.length} records`);
+  toast(`Loaded ${state.rows.length} sightings`);
   if(fit!==false) fitToData();
 }
 function fitToData(){
@@ -738,7 +836,6 @@ function renderGrid(){
   if(!state.headers.length){ renderEmpty(); return; }
   ensureComments();
   const keys=displayKeys();
-  const dRange=state.map.depth?numericRange(state.map.depth):null;
   const tbl=document.createElement('table'); tbl.className='grid'; tbl.style.tableLayout='fixed';
 
   // colgroup drives per-column widths
@@ -789,6 +886,7 @@ function renderGrid(){
     const tr=document.createElement('tr'); tr.dataset.id=row._id;
     if(row._id===state.selId) tr.classList.add('sel');
     if(state.dirty.has(row._id)) tr.classList.add('dirty');
+    if(state.map.waiting && isWaiting(row[state.map.waiting])) tr.classList.add('await-ss');
     const tdIdx=document.createElement('td'); tdIdx.className='col-idx'; tdIdx.textContent=i+1; tr.appendChild(tdIdx);
     const tdAct=document.createElement('td'); tdAct.className='col-act';
     const hasGeo=isFinite(parseFloat(row[state.map.lat]))&&isFinite(parseFloat(row[state.map.lng]));
@@ -813,20 +911,28 @@ function renderGrid(){
         tr.appendChild(td);
         return;
       }
+      // waiting-for-SeadragonSearch-ID → a flag checkbox
+      if(h===state.map.waiting){
+        td.className='flagcell waitflag';
+        const cb=document.createElement('input'); cb.type='checkbox';
+        cb.checked=isWaiting(row[h]); cb.dataset.col=h; cb.dataset.id=row._id;
+        cb.title='Waiting for a SeadragonSearch ID';
+        cb.addEventListener('change',()=>{
+          row[h]=cb.checked?'Y':'';
+          td.classList.toggle('on',cb.checked);
+          tr.classList.toggle('await-ss',cb.checked);
+          markDirty(row._id); refreshMarker(row); persist();
+        });
+        if(cb.checked) td.classList.add('on');
+        td.appendChild(cb);
+        tr.appendChild(td);
+        return;
+      }
       const isNum=(h===state.map.lat||h===state.map.lng||h===state.map.depth||h===state.map.count);
       if(isNum) td.className='num';
       if((h===state.map.lat||h===state.map.lng)&&row[h]!==''&&!isFinite(parseFloat(row[h]))) td.classList.add('coordbad');
       const inp=document.createElement('input'); inp.value=row[h]??''; inp.dataset.col=h; inp.dataset.id=row._id;
       td.appendChild(inp);
-      if(h===state.map.depth && dRange){
-        const v=parseFloat(row[h]);
-        if(!isNaN(v)&&dRange.hi>dRange.lo){
-          td.classList.add('depthcell');
-          const bar=document.createElement('div'); bar.className='depthbar';
-          bar.style.width=(8+90*Math.abs(v-dRange.lo)/Math.abs(dRange.hi-dRange.lo))+'%';
-          td.appendChild(bar);
-        }
-      }
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
@@ -880,6 +986,25 @@ function labelFor(row){
     row[state.map.count]?row[state.map.count]+'×':null].filter(Boolean);
   return parts.join(' · ') || '(unnamed)';
 }
+// number of OTHER sightings sharing this animal's id that are flagged as resights
+function resightCount(row){
+  const idCol=state.map.id, rCol=state.map.resight;
+  if(!idCol||!rCol) return 0;
+  const id=String(row[idCol]??'').trim();
+  if(!id) return 0;
+  return state.rows.filter(r=>String(r[idCol]??'').trim()===id && isResighted(r[rCol])).length;
+}
+// label built from the user-chosen fields (pin labels control)
+function pinLabel(row){
+  const o=state.labelOpts, parts=[];
+  if(o.id && row[state.map.id]) parts.push(String(row[state.map.id]).trim());
+  if(o.date && row[state.map.date]) parts.push(String(row[state.map.date]).trim());
+  if(o.resights){ const n=resightCount(row); if(n) parts.push(n+'↺'); }
+  if(o.depth && row[state.map.depth]) parts.push(String(row[state.map.depth]).trim()+'m');
+  if(o.position && state.map.position && row[state.map.position]) parts.push(String(row[state.map.position]).trim());
+  return parts.join(' · ');
+}
+function anyLabelOpt(){ const o=state.labelOpts; return o.id||o.date||o.resights||o.depth||o.position; }
 function refreshMarker(row){
   const lat=parseFloat(row[state.map.lat]), lng=parseFloat(row[state.map.lng]);
   if(row._marker){ state.markerLayer.removeLayer(row._marker); row._marker=null; }
@@ -889,11 +1014,66 @@ function refreshMarker(row){
     radius:sel?8:5.5, color:sel?var_('--coral'):'#06141d', weight:sel?2.5:1.5,
     fillColor:sel?var_('--coral'):sexColor(row), fillOpacity:.95
   });
-  m.bindTooltip(labelFor(row),{className:'sd-label',direction:'top',offset:[0,-6]});
+  const perm=anyLabelOpt(), txt=perm?pinLabel(row):labelFor(row);
+  if(txt) m.bindTooltip(txt,{className:'sd-label'+(perm?' sd-perm':''),direction:'top',offset:[0,-6],permanent:perm});
   m.on('click',()=>selectRow(row._id,true,true));
   m.addTo(state.markerLayer); row._marker=m;
 }
 function renderMarkers(){ state.markerLayer.clearLayers(); state.rows.forEach(r=>{r._marker=null;refreshMarker(r);}); }
+
+/* ---- COLONIES: cluster mapped sightings within state.colonyRadius metres ---- */
+function haversine(a,b){
+  const R=6371000, toR=x=>x*Math.PI/180;
+  const dLat=toR(b[0]-a[0]), dLng=toR(b[1]-a[1]);
+  const s=Math.sin(dLat/2)**2+Math.cos(toR(a[0]))*Math.cos(toR(b[0]))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+// single-link clustering: any two points within the radius join the same colony
+function computeColonies(){
+  const pts=state.rows
+    .map(r=>({r,lat:parseFloat(r[state.map.lat]),lng:parseFloat(r[state.map.lng])}))
+    .filter(p=>isFinite(p.lat)&&isFinite(p.lng));
+  const n=pts.length, parent=pts.map((_,i)=>i);
+  const find=i=>{ while(parent[i]!==i){ parent[i]=parent[parent[i]]; i=parent[i]; } return i; };
+  const uni=(i,j)=>{ parent[find(i)]=find(j); };
+  for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){
+    if(haversine([pts[i].lat,pts[i].lng],[pts[j].lat,pts[j].lng])<=state.colonyRadius) uni(i,j);
+  }
+  const groups=new Map();
+  pts.forEach((p,i)=>{ const k=find(i); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(p); });
+  return [...groups.values()].filter(g=>g.length>=2);   // a colony = 2+ sightings
+}
+// smallest-enclosing convex hull (monotone chain) for a polygon outline
+function hull(coords){
+  const p=coords.slice().sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
+  if(p.length<3) return p;
+  const cross=(o,a,b)=>(a[1]-o[1])*(b[0]-o[0])-(a[0]-o[0])*(b[1]-o[1]);
+  const lower=[]; for(const q of p){ while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],q)<=0)lower.pop(); lower.push(q); }
+  const upper=[]; for(let i=p.length-1;i>=0;i--){ const q=p[i]; while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],q)<=0)upper.pop(); upper.push(q); }
+  return lower.slice(0,-1).concat(upper.slice(0,-1));
+}
+function renderColonies(){
+  if(!state.colonyLayer) return;
+  state.colonyLayer.clearLayers();
+  if(!state.colonyOn) return;
+  let count=0;
+  computeColonies().forEach(g=>{
+    count++;
+    const latlngs=g.map(p=>[p.lat,p.lng]);
+    if(g.length===2){
+      // two points: draw a capsule-ish pair of buffered circles + connector
+      L.polyline(latlngs,{color:var_('--gold'),weight:2,opacity:.55,dashArray:'4 4',interactive:false}).addTo(state.colonyLayer);
+      latlngs.forEach(ll=>L.circle(ll,{radius:state.colonyRadius/2,color:var_('--gold'),weight:1.5,opacity:.6,fillColor:var_('--gold'),fillOpacity:.12,interactive:false}).addTo(state.colonyLayer));
+    } else {
+      const poly=hull(latlngs);
+      L.polygon(poly,{color:var_('--gold'),weight:2,opacity:.7,fillColor:var_('--gold'),fillOpacity:.14,interactive:false}).addTo(state.colonyLayer);
+    }
+    // count label at the centroid
+    const c=latlngs.reduce((a,ll)=>[a[0]+ll[0],a[1]+ll[1]],[0,0]).map(v=>v/latlngs.length);
+    L.marker(c,{interactive:false,icon:L.divIcon({className:'colony-tag',html:g.length+' sightings',iconSize:null})}).addTo(state.colonyLayer);
+  });
+  return count;
+}
 function selectRow(id,scroll,fromMap){
   state.selId=id;
   if(state.specSel&&state.specSel.size){ state.specSel.clear(); specWrap.querySelectorAll('.spec.sel').forEach(x=>x.classList.remove('sel')); }
@@ -991,7 +1171,7 @@ function toISO(s){
 function openSighting(){
   $('smDate').value=today(); $('smDepth').value=''; $('smId').value=''; $('smCount').value='1';
   $('smSex').value='Unknown'; $('smSite').value=''; $('smComments').value='';
-  $('smPos').value='GPS'; $('smEggs').checked=false; $('smResight').checked=false;
+  $('smPos').value='GPS'; $('smEggs').checked=false; $('smResight').checked=false; $('smWaiting').checked=false;
   $('smObserver').value='Marco';
   $('smLat').value=''; $('smLng').value=''; setLocHint();
   removeDraft();
@@ -1091,6 +1271,8 @@ function gatherRecord(){
     sex:$('smSex').value, site:$('smSite').value.trim(),
     comments:$('smComments').value.trim(), observer:$('smObserver').value,
     eggs:($('smEggs').checked?'Y':''), resight:($('smResight').checked?'Y':''),
+    waiting:($('smWaiting').checked?'Y':''),
+    waiting_ss_id:($('smWaiting').checked?'Y':''),
     position:$('smPos').value
   };
 }
@@ -1102,7 +1284,7 @@ function appendLocalRow(rec){
   set(state.map.depth,rec.depth); set(state.map.id,rec.id); set(state.map.count,rec.count);
   set(state.map.sex,rec.sex); set(state.map.site,rec.site);
   set(state.map.comments,rec.comments); set(state.map.observer,rec.observer);
-  set(state.map.eggs,rec.eggs); set(state.map.resight,rec.resight); set(state.map.position,rec.position);
+  set(state.map.eggs,rec.eggs); set(state.map.resight,rec.resight); set(state.map.waiting,rec.waiting); set(state.map.position,rec.position);
   snapshotKey(o);
   state.rows.push(o); renderAll(); persist(); selectRow(o._id,true,true);
 }
@@ -1229,15 +1411,18 @@ document.getElementById('svConfirm').addEventListener('click',doSave);
 function updateStats(){
   const mapped=state.rows.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
   const col=state.rows.filter(r=>parseInt(r[state.map.count])>=2).length;
+  const indiv=state.rows.reduce((a,r)=>{ const n=parseInt(r[state.map.count]); return a+(isFinite(n)&&n>0?n:1); },0);
   document.getElementById('statTotal').textContent=state.rows.length;
+  document.getElementById('statIndiv').textContent=indiv;
   document.getElementById('statMapped').textContent=mapped;
   document.getElementById('statColonies').textContent=col;
 }
-function renderAll(){ renderGrid(); renderMarkers(); updateStats(); if(currentTab()==='specimens') renderSpecimens(); }
+function renderAll(){ renderGrid(); renderMarkers(); renderColonies(); updateStats(); if(currentTab()==='specimens') renderSpecimens(); }
 function persist(){
   try{ localStorage.setItem('wsd_editor',JSON.stringify({
     headers:state.headers, map:state.map, sort:state.sort,
     colOrder:state.colOrder, colWidth:state.colWidth, dirty:[...state.dirty],
+    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, labelOpts:state.labelOpts,
     rows:state.rows.map(r=>{ const {_marker,...rest}=r; return rest; })
   })); }catch(e){}
 }
@@ -1246,9 +1431,13 @@ function restore(){
     if(s && s.headers && s.headers.length){
       state.headers=s.headers; state.map=Object.assign(state.map,s.map); if(s.sort) state.sort=s.sort;
       if(s.colOrder) state.colOrder=s.colOrder; if(s.colWidth) state.colWidth=s.colWidth;
+      if(typeof s.colonyOn==='boolean') state.colonyOn=s.colonyOn;
+      if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
+      if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
       state.rows.forEach(r=>{ if(!r._key||!r._orig) snapshotKey(r); });
       if(s.dirty) state.dirty=new Set(s.dirty);
+      if(window.syncSdCtl) syncSdCtl();
       renderAll(); updateSaveBar(); return true;
     }
   }catch(e){}
