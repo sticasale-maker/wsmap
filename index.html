@@ -231,6 +231,20 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 #svmodal .cm-foot{display:flex;gap:9px;margin-top:14px}
 #svmodal .cm-foot .btn{flex:1;justify-content:center;padding:9px}
 
+/* confirm-move dialog — shares the delete/save dialog look */
+#mvmodal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1400;
+  width:380px;max-width:calc(100vw - 32px);background:var(--ink);border:1px solid var(--isobath-dim);
+  border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.6);padding:18px 18px 16px}
+#mvmodal.show{display:block}
+#mvmodal h3{font-family:var(--disp);font-weight:600;font-size:16px;margin-bottom:8px}
+#mvmodal p{font-size:12.5px;color:var(--sand-dim);line-height:1.5;margin-bottom:6px}
+#mvmodal p b{color:var(--sand);font-variant-numeric:tabular-nums}
+#mvmodal .cm-foot{display:flex;gap:9px;margin-top:14px}
+#mvmodal .cm-foot .btn{flex:1;justify-content:center;padding:9px}
+.move-pin{filter:drop-shadow(0 3px 4px rgba(0,0,0,.5));cursor:grab}
+.move-pin:active{cursor:grabbing}
+.leaflet-marker-draggable .move-pin{cursor:grab}
+
 /* ---- population dashboard ---- */
 #dashscrim{display:none;position:fixed;inset:0;background:rgba(3,12,18,.66);z-index:1500;backdrop-filter:blur(2px)}
 #dashscrim.show{display:block}
@@ -312,6 +326,26 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
   font-family:inherit;font-size:11px;font-weight:600;padding:3px 12px;border-radius:6px;cursor:pointer}
 #connbanner .cb-retry:hover{background:var(--coral);color:#fff}
 
+/* ---- login gate ---- */
+body.locked #app,body.locked #splitter{display:none!important}
+body.locked{overflow:hidden}
+#gate{position:fixed;inset:0;z-index:3000;display:none;align-items:center;justify-content:center;
+  background:radial-gradient(120% 120% at 50% 0%,#0e2c3c 0%,var(--abyss) 70%)}
+body.locked #gate{display:flex}
+.gate-card{width:min(360px,calc(100vw - 32px));background:var(--ink);border:1px solid var(--isobath-dim);
+  border-radius:14px;box-shadow:0 28px 80px rgba(0,0,0,.6);padding:26px 24px 22px;text-align:left}
+.gate-brand{font-family:var(--disp);font-weight:600;font-size:21px;letter-spacing:-.01em;color:var(--sand)}
+.gate-brand em{font-style:italic;color:var(--gold)}
+.gate-lead{font-size:12.5px;color:var(--sand-dim);margin:8px 0 18px;line-height:1.5}
+#gateForm{display:flex;flex-direction:column;gap:10px}
+#gatePass{font-family:var(--ui);font-size:14px;color:var(--sand);background:var(--abyss);
+  border:1px solid var(--line);border-radius:9px;padding:11px 13px;letter-spacing:.02em}
+#gatePass:focus{outline:none;border-color:var(--isobath)}
+#gateGo{justify-content:center;padding:11px;font-size:13px}
+.gate-msg{min-height:16px;margin-top:11px;font-size:11.5px;line-height:1.45;color:var(--coral)}
+.gate-msg.ok{color:var(--isobath)}
+.gate-card.busy #gateGo{opacity:.6;pointer-events:none}
+
 @media(max-width:820px){
   #left{width:100%!important;border-right:none}
   #splitter{display:none}
@@ -324,7 +358,20 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 @media(min-width:821px){ body.view-map #left,body.view-data #left{display:flex} }
 </style>
 </head>
-<body class="view-data">
+<body class="view-data locked">
+
+<!-- login gate — the app stays hidden until the Apps Script verifies the password -->
+<div id="gate">
+  <div class="gate-card">
+    <div class="gate-brand">Weedy Seadragon <em>survey</em></div>
+    <p class="gate-lead">Enter the survey password to continue.</p>
+    <form id="gateForm" autocomplete="off">
+      <input id="gatePass" type="password" inputmode="text" placeholder="password" aria-label="Survey password" autocomplete="current-password">
+      <button class="btn coral" id="gateGo" type="submit">Unlock</button>
+    </form>
+    <div class="gate-msg" id="gateMsg"></div>
+  </div>
+</div>
 
 <div id="app">
   <section id="left">
@@ -433,6 +480,16 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
   </div>
 </div>
 
+<!-- confirm-move dialog -->
+<div id="mvmodal">
+  <h3>Move this sighting?</h3>
+  <p id="mvText">Update the saved coordinates to the new position.</p>
+  <div class="cm-foot">
+    <button class="btn" id="mvCancel">Cancel</button>
+    <button class="btn coral" id="mvConfirm">Move it</button>
+  </div>
+</div>
+
 <!-- confirm-save dialog -->
 <div id="svmodal">
   <h3>Save changes?</h3>
@@ -474,6 +531,7 @@ const CONFIG = {
   sheetId:'1UnTxSU3phEKkjEbf_bDGBPRh-xYH4Cm1vH5zcg36t2Y',
   sheetGid:'680128058',
   specimensGid:'2124826284',  // gid of the Specimens tab — the "individuals" stat is its data-row count. Blank = fall back to local dedup of map_latest.
+  sightingsGid:'1685375402',  // gid of the raw Sightings tab — feeds the dashboard's brooding (eggs/col E) and resight (is_resight) panels. Blank = those panels fall back to map_latest.
   defaultHeaders:['id','date','lat','lng','depth_m','count','sex','site','comments','observer'],
   saveEndpoint:'https://script.google.com/macros/s/AKfycbz4kUIX0stdlHtS9SeenbEoPm_6GoV3xI0Tb7aigyF8tHEGooyyMAlyXqBQQXHfOYak/exec',
   notesHeader:'',  // set to the exact map_latest header that holds your dive notes, e.g. 'notes'. Blank = auto-detect.
@@ -488,7 +546,10 @@ const state = {
   map:{lat:null,lng:null,id:null,label:null,date:null,depth:null,count:null,sex:null,site:null,comments:null,observer:null,eggs:null,resight:null,waiting:null,position:null},
   selId:null, pickMode:false, markerLayer:null, colonyLayer:null,
   colonyOn:false, colonyRadius:200, sexDominanceOn:false, domIds:new Set(),
+  moveMode:false, pendingMove:null,
   specimenCount:null,   // data-row count of the Specimens tab (fetched separately)
+  sightings:null,       // {rows,headers,cols} from the raw Sightings tab (event-level, for dashboard)
+  observer:null,        // logged-in observer (from the password gate), used to prefill new sightings
   labelOpts:{id:true,date:false,resights:false,depth:false,position:false},
   sort:{col:null,dir:1},
   colOrder:null, colWidth:{}, specSel:new Set(),
@@ -617,6 +678,8 @@ state.colonyLayer = L.layerGroup().addTo(map);
       +`<div class="op"><span>Range</span><input id="colonyR" type="range" min="50" max="500" step="10" value="${state.colonyRadius}"><b id="colonyRv">${state.colonyRadius} m</b></div>`
       +`<label class="lblrow" id="domRow"><input type="checkbox" id="domChk"${state.sexDominanceOn?' checked':''}> Highlight sex-dominant colonies</label>`
       +'<div class="domhint">≥4 specimens, one sex 2:1+ → pins enlarged & outlined</div>'
+      +`<label class="lblrow" id="moveRow" style="margin-top:8px;border-top:1px solid var(--line);padding-top:9px"><input type="checkbox" id="moveChk"${state.moveMode?' checked':''}> Move pins (drag to reposition)</label>`
+      +'<div class="domhint">drag a pin, then confirm the new spot</div>'
       +'<details><summary>Pin labels</summary>'
       +LABEL_FIELDS.map(([k,n])=>`<label class="lblrow"><input type="checkbox" data-lbl="${k}"${state.labelOpts[k]?' checked':''}> ${n}</label>`).join('')
       +'</details>'
@@ -629,6 +692,8 @@ state.colonyLayer = L.layerGroup().addTo(map);
     rng.addEventListener('input',()=>{ state.colonyRadius=+rng.value; rv.textContent=rng.value+' m'; renderColonies(); renderMarkers(); updateStats(); });
     rng.addEventListener('change',persist);
     d.querySelector('#domChk').addEventListener('change',e=>{ state.sexDominanceOn=e.target.checked; renderColonies(); renderMarkers(); persist(); });
+    d.querySelector('#moveChk').addEventListener('change',e=>{ state.moveMode=e.target.checked; renderMarkers();
+      toast(state.moveMode?'Move mode on — drag a pin to reposition it':'Move mode off'); });
     d.querySelectorAll('input[data-lbl]').forEach(cb=>cb.addEventListener('change',()=>{
       state.labelOpts[cb.dataset.lbl]=cb.checked; renderMarkers(); persist();
     }));
@@ -636,6 +701,7 @@ state.colonyLayer = L.layerGroup().addTo(map);
     window.syncSdCtl=()=>{
       d.querySelector('#colonyChk').checked=state.colonyOn;
       d.querySelector('#domChk').checked=state.sexDominanceOn;
+      d.querySelector('#moveChk').checked=state.moveMode;
       rng.value=state.colonyRadius; rv.textContent=state.colonyRadius+' m';
       d.querySelectorAll('input[data-lbl]').forEach(cb=>{ cb.checked=!!state.labelOpts[cb.dataset.lbl]; });
     };
@@ -674,8 +740,8 @@ function autoMap(){
   state.map.comments= detect(h,[/^notes?$/i,/^comments?$/i,/note/i,/comment/i,/remark/i]);
   if(CONFIG.notesHeader && h.includes(CONFIG.notesHeader)) state.map.comments=CONFIG.notesHeader;
   state.map.observer= detect(h,[/observ/i,/diver/i,/recorder/i,/\bwho\b/i,/_by$/i,/^by$/i]);
-  state.map.eggs    = detect(h,[/^eggs$/i,/egg/i]);
-  state.map.resight = detect(h,[/resight/i,/re-?sight/i]);
+  state.map.eggs    = detect(h,[/^eggs$/i,/eggs?/i,/brood/i,/pregnant/i]);
+  state.map.resight = detect(h,[/^is_?resight$/i,/resight/i,/re-?sight/i]);
   state.map.waiting = detect(h,[/waiting.*ss|ss.*waiting/i,/await/i,/pending.*id|id.*pending/i,/no.*ss.?id|ss.?id.*pending/i,/waiting/i]);
   state.map.position= detect(h,[/position_source/i,/position/i,/source/i,/method/i]);
   ensureComments();
@@ -864,10 +930,37 @@ function loadFromSheet(silent){
   const url=CONFIG.csvUrl||`https://docs.google.com/spreadsheets/d/${CONFIG.sheetId}/gviz/tq?tqx=out:csv&gid=${CONFIG.sheetGid}`;
   if(!silent) toast('Fetching sheet…');
   loadSpecimenCount();   // refresh the "individuals" number in parallel (non-blocking)
+  loadSightings();       // refresh event-level data for the dashboard (non-blocking)
   return fetch(url)
     .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
     .then(txt=>{ if(/^\s*</.test(txt)) throw new Error('not-public');
       ingest(Papa.parse(txt,{header:true,skipEmptyLines:true}), false); setConn(true); return true; });
+}
+// fetch the raw Sightings tab (event-level) — feeds the brooding & resight dashboard panels
+function loadSightings(){
+  if(!CONFIG.sightingsGid){ state.sightings=null; return Promise.resolve(); }
+  const url=`https://docs.google.com/spreadsheets/d/${CONFIG.sheetId}/gviz/tq?tqx=out:csv&gid=${CONFIG.sightingsGid}`;
+  return fetch(url)
+    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+    .then(txt=>{ if(/^\s*</.test(txt)) throw new Error('not-public');
+      const parsed=Papa.parse(txt,{header:true,skipEmptyLines:true});
+      const rows=parsed.data||[], headers=(parsed.meta&&parsed.meta.fields)||[];
+      // map the columns the dashboard needs from this tab
+      const cols={
+        date:    detect(headers,[/^date$/i,/date/i]),
+        id:      detect(headers,[/^id$/i,/specimen/i,/\btag\b/i,/animal/i]),
+        sex:     detect(headers,[/^sex$/i,/sex/i,/gender/i]),
+        eggs:    detect(headers,[/^eggs$/i,/eggs?/i,/brood/i,/pregnant/i]),       // column E
+        resight: detect(headers,[/^is_?resight$/i,/resight/i,/re-?sight/i]),       // is_resight
+        lat:     detect(headers,[/^lat$/i,/latitude/i,/\blat\b/i]),
+        lng:     detect(headers,[/^lng$/i,/^lon$/i,/longitude/i,/\blng\b/i,/\blon\b/i])
+      };
+      // normalise any serial dates the same way the main loader does
+      if(cols.date) rows.forEach(r=>{ r[cols.date]=serialToDate(r[cols.date]); });
+      state.sightings={rows,headers,cols};
+      if(DASH.modal.classList.contains('show')) buildDashboard();   // live-refresh if open
+    })
+    .catch(e=>{ console.warn('Sightings fetch failed:',e); /* dashboard falls back to map_latest */ });
 }
 // fetch the Specimens tab and use its number of data rows as the "individuals" stat
 function loadSpecimenCount(){
@@ -1091,19 +1184,34 @@ function pinLabel(row){
   return parts.join(' · ');
 }
 function anyLabelOpt(){ const o=state.labelOpts; return o.id||o.date||o.resights||o.depth||o.position; }
+function movePinIcon(color,emph){
+  const size=emph?22:18, r=size/2;
+  return L.divIcon({className:'',iconSize:[size,size+6],iconAnchor:[r,size+4],
+    html:`<div class="move-pin" style="--pc:${color}"><svg viewBox="0 0 24 30" width="${size}" height="${size+6}"><path d="M12 0C6 0 1.5 4.5 1.5 10.5 1.5 18 12 30 12 30s10.5-12 10.5-19.5C22.5 4.5 18 0 12 0z" fill="${color}" stroke="#fff" stroke-width="1.6"/><circle cx="12" cy="10.5" r="3.4" fill="#06141d"/></svg></div>`});
+}
 function refreshMarker(row){
   const lat=parseFloat(row[state.map.lat]), lng=parseFloat(row[state.map.lng]);
   if(row._marker){ state.markerLayer.removeLayer(row._marker); row._marker=null; }
   if(!isFinite(lat)||!isFinite(lng)) return;
   const sel=row._id===state.selId || (state.specSel&&state.specSel.has(row._id));
   const emph=state.domIds&&state.domIds.has(row._id);   // pin inside a sex-dominant colony
-  const m=L.circleMarker([lat,lng],{
-    radius:sel?8:(emph?8:5.5), color:sel?var_('--coral'):(emph?'#ffffff':'#06141d'), weight:sel?2.5:(emph?2.5:1.5),
-    fillColor:sel?var_('--coral'):sexColor(row), fillOpacity:.95
-  });
   const perm=anyLabelOpt(), txt=perm?pinLabel(row):labelFor(row);
-  if(txt) m.bindTooltip(txt,{className:'sd-label'+(perm?' sd-perm':''),direction:'top',offset:[0,-6],permanent:perm});
-  m.on('click',()=>selectRow(row._id,true,true));
+  let m;
+  if(state.moveMode){
+    // draggable pin marker — drop triggers a confirm before the coords are kept
+    m=L.marker([lat,lng],{draggable:true,icon:movePinIcon(sel?var_('--coral'):sexColor(row),emph),zIndexOffset:sel?1000:0});
+    m.on('dragstart',()=>{ m._from=[lat,lng]; });
+    m.on('dragend',()=>{ const p=m.getLatLng(); askMove(row._id,m._from,[p.lat,p.lng]); });
+    if(txt) m.bindTooltip(txt,{className:'sd-label'+(perm?' sd-perm':''),direction:'top',offset:[0,-22],permanent:perm});
+    m.on('click',()=>selectRow(row._id,true,true));
+  } else {
+    m=L.circleMarker([lat,lng],{
+      radius:sel?8:(emph?8:5.5), color:sel?var_('--coral'):(emph?'#ffffff':'#06141d'), weight:sel?2.5:(emph?2.5:1.5),
+      fillColor:sel?var_('--coral'):sexColor(row), fillOpacity:.95
+    });
+    if(txt) m.bindTooltip(txt,{className:'sd-label'+(perm?' sd-perm':''),direction:'top',offset:[0,-6],permanent:perm});
+    m.on('click',()=>selectRow(row._id,true,true));
+  }
   m.addTo(state.markerLayer); row._marker=m;
 }
 function renderMarkers(){ state.markerLayer.clearLayers(); state.rows.forEach(r=>{r._marker=null;refreshMarker(r);}); }
@@ -1283,7 +1391,7 @@ function openSighting(){
   $('smDate').value=today(); $('smDepth').value=''; $('smId').value=''; $('smCount').value='1';
   $('smSex').value='Unknown'; $('smSite').value=''; $('smComments').value='';
   $('smPos').value='GPS'; $('smEggs').checked=false; $('smResight').checked=false; $('smWaiting').checked=false;
-  $('smObserver').value='Marco';
+  $('smObserver').value=state.observer||'Marco';
   $('smLat').value=''; $('smLng').value=''; setLocHint();
   removeDraft();
   smodal.classList.add('show');
@@ -1373,7 +1481,40 @@ function doDelete(){
 }
 $('cmCancel').addEventListener('click',closeConfirm);
 $('cmConfirm').addEventListener('click',doDelete);
-$('cscrim').addEventListener('click',()=>{ closeConfirm(); closeSave(); });
+$('cscrim').addEventListener('click',()=>{ closeConfirm(); closeSave(); closeMove(); });
+
+/* ---- drag a pin to a new position (move mode), with confirmation ---- */
+function askMove(id,from,to){
+  const row=state.rows.find(r=>r._id===id); if(!row){ return; }
+  state.pendingMove={id,from,to};
+  const f=(from&&isFinite(from[0]))?from[0].toFixed(5)+', '+from[1].toFixed(5):'—';
+  const t=to[0].toFixed(5)+', '+to[1].toFixed(5);
+  const moved=(from&&isFinite(from[0]))?Math.round(haversine(from,to)):null;
+  $('mvText').innerHTML=`Move <b>${labelFor(row)}</b><br>from <b>${f}</b><br>to <b>${t}</b>`
+    +(moved!=null?` <span style="color:var(--faint)">(${moved} m)</span>`:'')
+    +`.<br>The new coordinates will be queued to save to the Sheet.`;
+  $('cscrim').classList.add('show'); $('mvmodal').classList.add('show');
+}
+function closeMove(){
+  // if a move is pending and not confirmed, snap the pin back
+  if(state.pendingMove){ const r=state.rows.find(x=>x._id===state.pendingMove.id); if(r) refreshMarker(r); }
+  state.pendingMove=null; $('cscrim').classList.remove('show'); $('mvmodal').classList.remove('show');
+}
+function doMove(){
+  const pm=state.pendingMove; if(!pm){ closeMove(); return; }
+  const row=state.rows.find(r=>r._id===pm.id);
+  if(row){
+    row[state.map.lat]=pm.to[0].toFixed(6);
+    row[state.map.lng]=pm.to[1].toFixed(6);
+    if(state.map.position){ row[state.map.position]='estimated (map)'; }   // dragged → estimated
+    markDirty(row._id);
+    refreshMarker(row); renderColonies(); updateStats(); persist();
+    toast('Moved — remember to Save changes');
+  }
+  state.pendingMove=null; $('cscrim').classList.remove('show'); $('mvmodal').classList.remove('show');
+}
+$('mvCancel').addEventListener('click',closeMove);
+$('mvConfirm').addEventListener('click',doMove);
 
 function gatherRecord(){
   return {
@@ -1497,58 +1638,128 @@ function panelDepth(){
 }
 
 /* ---------- PANEL 2: sightings by month ---------- */
-function panelMonth(){
-  const counts=new Array(12).fill(0); let nd=0;
-  state.rows.forEach(r=>{ const m=monthOf(r[state.map.date]); if(m!=null){counts[m]++;} else nd++; });
-  if(!counts.some(Boolean)) return card('Sightings by month','seasonality','<div class="empty-c">No usable dates.</div>');
-  const data=counts.map((v,i)=>({label:MONTHS[i],v,c:CC.bar()}));
-  return card('Sightings by month','count',barChart(data,{gap:0.2,w:440,padB:34}),
-    'When animals were found, all years pooled. Shaped partly by dive effort — read peaks as “when we looked”, not only “when they’re present”.');
+/* ---------- PANEL 2: timeline across years (monthly) ---------- */
+function panelTimeline(){
+  // collect (year, month) keys present in the data
+  const keys=[];
+  state.rows.forEach(r=>{ const y=yearOf(r[state.map.date]), m=monthOf(r[state.map.date]); if(y!=null&&m!=null) keys.push(y*12+m); });
+  if(!keys.length) return card({t:'Survey timeline',_wide:true},'monthly','<div class="empty-c">No usable dates.</div>');
+  const lo=Math.min(...keys), hi=Math.max(...keys), n=hi-lo+1;
+  const series=new Array(n).fill(0);
+  keys.forEach(k=>series[k-lo]++);
+  const months=[]; for(let i=0;i<n;i++){ const k=lo+i; months.push({y:Math.floor(k/12),m:k%12,v:series[i]}); }
+  const peak=Math.max(...series), totalMonths=n, activeMonths=series.filter(Boolean).length;
+
+  // geometry — wide area chart
+  const W=900,H=210,padL=34,padR=12,padT=12,padB=42, iw=W-padL-padR, ih=H-padT-padB;
+  const max=Math.max(1,peak), ticks=4;
+  const xAt=i=> padL + (n===1?iw/2 : iw*i/(n-1));
+  const yAt=v=> padT+ih - ih*v/max;
+  let g='';
+  for(let t=0;t<=ticks;t++){ const val=max*t/ticks, y=padT+ih-ih*t/ticks;
+    g+=`<line class="cgrid" x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" opacity="${t===0?0.9:0.4}"/>`;
+    g+=`<text class="cy-axis" x="${padL-5}" y="${(y+3).toFixed(1)}" text-anchor="end">${Math.round(val)}</text>`;
+  }
+  // year boundaries + labels (tick at each January, or the first month present)
+  const seenYears=new Set();
+  months.forEach((mm,i)=>{
+    if(mm.m===0 || i===0){
+      const x=xAt(i);
+      if(!seenYears.has(mm.y)){ seenYears.add(mm.y);
+        g+=`<line x1="${x.toFixed(1)}" y1="${padT}" x2="${x.toFixed(1)}" y2="${padT+ih}" stroke="var(--line)" stroke-width="1" opacity="0.55"/>`;
+        g+=`<text class="cx-axis" x="${x.toFixed(1)}" y="${(H-padB+15).toFixed(1)}" text-anchor="middle" style="fill:var(--sand-dim);font-weight:600">${mm.y}</text>`;
+      }
+    }
+  });
+  // area path + line
+  let area=`M ${xAt(0).toFixed(1)} ${(padT+ih).toFixed(1)}`;
+  let line='';
+  months.forEach((mm,i)=>{ const x=xAt(i).toFixed(1), y=yAt(mm.v).toFixed(1);
+    area+=` L ${x} ${y}`; line+=(i===0?'M':'L')+` ${x} ${y} `; });
+  area+=` L ${xAt(n-1).toFixed(1)} ${(padT+ih).toFixed(1)} Z`;
+  g+=`<path d="${area}" fill="var(--isobath)" opacity="0.16"/>`;
+  g+=`<path d="${line}" fill="none" stroke="var(--isobath)" stroke-width="2" stroke-linejoin="round"/>`;
+  // dots on non-zero months, with hover titles
+  months.forEach((mm,i)=>{ if(mm.v>0){ const x=xAt(i), y=yAt(mm.v);
+    g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="var(--isobath)"><title>${MONTHS[mm.m]} ${mm.y}: ${mm.v} sighting${mm.v===1?'':'s'}</title></circle>`; } });
+  const svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">${g}</svg>`;
+  const kpi=`<div class="kpi-row" style="margin-bottom:2px">`
+    +`<div class="kpi"><b>${keys.length}</b><span>sightings dated</span></div>`
+    +`<div class="kpi"><b>${activeMonths}/${totalMonths}</b><span>months with a dive</span></div>`
+    +`<div class="kpi"><b>${peak}</b><span>busiest month</span></div></div>`;
+  return card({t:'Survey timeline',_wide:true},'sightings per month, '+months[0].y+'–'+months[n-1].y,
+    kpi+svg,'Each point is one calendar month across the whole survey. Gaps are months with no logged dive; height reflects effort as much as abundance.');
 }
 
 /* ---------- PANEL 3: breeding phenology (egg-carrying by month) ---------- */
 function panelBreeding(){
-  if(!state.map.eggs) return card('Brooding season','egg-carrying males','<div class="empty-c">No eggs column found.</div>');
-  const eggMonth=new Array(12).fill(0), allMonth=new Array(12).fill(0);
-  state.rows.forEach(r=>{ const m=monthOf(r[state.map.date]); if(m==null) return; allMonth[m]++;
-    if(isResighted(r[state.map.eggs])) eggMonth[m]++; });   // reuse the Y/1/true/x truthy test
+  // prefer the raw Sightings tab (event-level eggs + date); fall back to map_latest
+  const src=state.sightings, useSrc=src&&src.cols.eggs&&src.cols.date;
+  const rows = useSrc ? src.rows : state.rows;
+  const eggsCol = useSrc ? src.cols.eggs : state.map.eggs;
+  const dateCol = useSrc ? src.cols.date : state.map.date;
+  if(!eggsCol) return card('Brooding season','egg-carrying males','<div class="empty-c">No eggs column found.</div>');
+  const eggMonth=new Array(12).fill(0);
+  rows.forEach(r=>{ const m=monthOf(r[dateCol]); if(m==null) return;
+    if(isResighted(r[eggsCol])) eggMonth[m]++; });   // reuse the Y/1/true/x truthy test
   const total=eggMonth.reduce((a,b)=>a+b,0);
   if(!total) return card('Brooding season','egg-carrying males','<div class="empty-c">No egg-carrying records yet.</div>');
   const data=eggMonth.map((v,i)=>({label:MONTHS[i],v,c:CC.male()}));
+  const srcNote=useSrc?'Sightings tab (every brooding observation)':'map_latest (latest position only — under-counts brooding)';
   return card('Brooding season','egg-carrying records · '+total,barChart(data,{gap:0.2,padB:34}),
-    'Months in which brooding (egg-carrying) males were recorded — a direct, effort-robust signal of the local breeding window.');
+    'Months in which brooding (egg-carrying) males were recorded — a direct, effort-robust signal of the local breeding window. Source: '+srcNote+'.');
 }
 
 /* ---------- PANEL 4: resight / site fidelity ---------- */
 function panelFidelity(){
-  const rCol=state.map.resight;
+  // prefer event-level Sightings data (multiple rows per animal → real intervals)
+  const src=state.sightings, useSrc=src&&src.cols.resight&&src.cols.id&&src.cols.date;
+  const rows    = useSrc ? src.rows        : state.rows;
+  const rCol    = useSrc ? src.cols.resight: state.map.resight;
+  const idCol   = useSrc ? src.cols.id     : state.map.id;
+  const dateCol = useSrc ? src.cols.date   : state.map.date;
+  const latCol  = useSrc ? src.cols.lat    : state.map.lat;
+  const lngCol  = useSrc ? src.cols.lng    : state.map.lng;
   if(!rCol) return card('Resights & site fidelity','residency','<div class="empty-c">No resight flag found.</div>');
-  // animals present in this view, and how many are flagged as resights
-  const idCol=state.map.id;
+
   const byId=new Map();
-  state.rows.forEach(r=>{ const id=idCol?String(r[idCol]??'').trim():''; if(!id) return;
+  rows.forEach(r=>{ const id=idCol?String(r[idCol]??'').trim():''; if(!id) return;
     if(!byId.has(id)) byId.set(id,[]); byId.get(id).push(r); });
   const animals=byId.size;
-  const resightRows=state.rows.filter(r=>isResighted(r[rCol])).length;
-  const animalsResighted=[...byId.values()].filter(rows=>rows.some(r=>isResighted(r[rCol]))).length;
-  // any animals with 2+ dated rows in THIS view → can show an interval
-  const intervals=[];
-  byId.forEach(rows=>{ const ds=rows.map(r=>r[state.map.date]).filter(Boolean).map(s=>new Date(s)).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
-    for(let i=1;i<ds.length;i++) intervals.push(Math.round((ds[i]-ds[i-1])/86400000)); });
+  // an animal "seen again" = appears in 2+ sighting rows, or any row flagged is_resight
+  const animalsResighted=[...byId.values()].filter(rs=>rs.length>1 || rs.some(r=>isResighted(r[rCol]))).length;
+
+  // intervals (days) between successive sightings of the same animal, and same-spot refinds
+  const intervals=[]; let refindPairs=0, sameSpot=0;
+  byId.forEach(rs=>{
+    const evs=rs.map(r=>({d:new Date(r[dateCol]),lat:parseFloat(r[latCol]),lng:parseFloat(r[lngCol])}))
+      .filter(e=>!isNaN(e.d)).sort((a,b)=>a.d-b.d);
+    for(let i=1;i<evs.length;i++){
+      intervals.push(Math.round((evs[i].d-evs[i-1].d)/86400000));
+      if(isFinite(evs[i].lat)&&isFinite(evs[i-1].lat)){ refindPairs++;
+        if(haversine([evs[i-1].lat,evs[i-1].lng],[evs[i].lat,evs[i].lng])<=state.colonyRadius) sameSpot++; }
+    }
+  });
+  const medInt=intervals.length?intervals.slice().sort((a,b)=>a-b)[Math.floor(intervals.length/2)]:null;
+
   const kpi=`<div class="kpi-row">`
     +`<div class="kpi"><b>${animals}</b><span>animals (IDed)</span></div>`
     +`<div class="kpi"><b>${animalsResighted}</b><span>seen again</span></div>`
     +`<div class="kpi"><b>${animals?Math.round(100*animalsResighted/animals):0}%</b><span>resight rate</span></div>`
+    +(refindPairs?`<div class="kpi"><b>${Math.round(100*sameSpot/refindPairs)}%</b><span>refound ≤${state.colonyRadius} m</span></div>`:'')
     +`</div>`;
   let chartOrNote;
   if(intervals.length){
-    // histogram of intervals in ~90-day bins
     const maxd=Math.max(...intervals), bw=90, nb=Math.max(1,Math.ceil((maxd+1)/bw));
     const bins=[]; for(let b=0;b<nb;b++) bins.push({label:`${b*3}–${b*3+3}`,v:0,c:CC.bar()});
     intervals.forEach(d=>{ bins[Math.min(nb-1,Math.floor(d/bw))].v++; });
-    chartOrNote=barChart(bins,{gap:0.18,padB:34})+`<div class="note">Months between successive sightings of the same animal (this view holds ${intervals.length} such gaps).</div>`;
+    chartOrNote=barChart(bins,{gap:0.18,padB:34})
+      +`<div class="note">Months between successive sightings of the same animal (${intervals.length} gaps`
+      +(medInt!=null?`, median ${medInt} d`:'')+`). “Refound” = the later sighting fell within ${state.colonyRadius} m of the earlier one — evidence of site fidelity. Source: ${useSrc?'Sightings tab':'map_latest'}.</div>`;
+  } else if(useSrc){
+    chartOrNote=`<div class="note">No animal yet has two dated sightings in the Sightings tab, so no intervals to plot. The resight rate above still holds.</div>`;
   } else {
-    chartOrNote=`<div class="note">The map_latest view keeps one row per animal, so it can’t show the gap between a first and later sighting. The resight rate above still holds; for full interval analysis the dashboard would need to read the raw Sightings tab.</div>`;
+    chartOrNote=`<div class="note">Set CONFIG.sightingsGid to the raw Sightings tab to compute resight intervals and same-spot refinds. With map_latest alone (one row per animal) only the resight rate is available.</div>`;
   }
   return card({t:'Resights & site fidelity',_wide:false},'residency',kpi+chartOrNote);
 }
@@ -1589,7 +1800,7 @@ function buildDashboard(){
   const total=state.rows.length;
   const mapped=state.rows.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
   DASH.sub.textContent=`${total} sightings · ${mapped} mapped · ${(state.specimenCount!=null?state.specimenCount:buildSpecimens().length)} individuals`;
-  DASH.body.innerHTML=[panelDepth(),panelMonth(),panelBreeding(),panelFidelity(),panelPosition(),panelObserver()].join('');
+  DASH.body.innerHTML=[panelDepth(),panelBreeding(),panelTimeline(),panelFidelity(),panelPosition(),panelObserver()].join('');
 }
 function openDashboard(){ if(!state.rows.length){ toast('Load some sightings first'); return; }
   buildDashboard(); DASH.scrim.classList.add('show'); DASH.modal.classList.add('show'); }
@@ -1753,6 +1964,7 @@ document.getElementById('viewToggle').addEventListener('click',()=>{
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if(DASH.modal.classList.contains('show')){ closeDashboard(); return; }
+    if($('mvmodal').classList.contains('show')){ closeMove(); return; }
     if($('svmodal').classList.contains('show')){ closeSave(); return; }
     if($('cmodal').classList.contains('show')){ closeConfirm(); return; }
     if(state.pickMode){ cancelDrop(); return; }
@@ -1765,14 +1977,72 @@ document.addEventListener('keydown',e=>{
    ========================================================================== */
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2200); }
-renderEmpty();
-loadFromSheet(true).catch(err=>{
-  console.warn('Online load failed, falling back to cache:',err);
-  const cached=restore();
-  if(cached) setConn(false, 'Showing cached data — not connected. '+loadErrorMsg(err)+'. Edits are local only until you reconnect.');
-  else { renderEmpty(); setConn(false, loadErrorMsg(err)); toast(loadErrorMsg(err)); }
-});
-setTimeout(()=>{map.invalidateSize();bathyRefresh();},200);
+
+/* ============================================================================
+   LOGIN GATE
+   The password is verified by the Apps Script (server-side) and never appears
+   in this file. On success the script returns which observer to credit, which
+   we keep for the session and use to prefill the Observer field.
+   ========================================================================== */
+function unlockApp(observer){
+  state.observer=observer||null;
+  try{ sessionStorage.setItem('wsd_obs', observer||''); }catch(e){}
+  document.body.classList.remove('locked');
+  if(state.observer){
+    // make the logged-in observer the default option in the new-sighting form
+    const sel=document.getElementById('smObserver');
+    if(sel && ![...sel.options].some(o=>o.value===state.observer)){
+      sel.add(new Option(state.observer,state.observer));
+    }
+  }
+  bootApp();
+}
+let booted=false;
+function bootApp(){
+  if(booted) return; booted=true;
+  renderEmpty();
+  loadFromSheet(true).catch(err=>{
+    console.warn('Online load failed, falling back to cache:',err);
+    const cached=restore();
+    if(cached) setConn(false, 'Showing cached data — not connected. '+loadErrorMsg(err)+'. Edits are local only until you reconnect.');
+    else { renderEmpty(); setConn(false, loadErrorMsg(err)); toast(loadErrorMsg(err)); }
+  });
+  setTimeout(()=>{map.invalidateSize();bathyRefresh();},200);
+}
+(function initGate(){
+  const form=document.getElementById('gateForm'), pass=document.getElementById('gatePass'),
+        msg=document.getElementById('gateMsg'), card=document.querySelector('.gate-card');
+  // a prior successful login this session unlocks without re-asking (password not stored)
+  try{ if(sessionStorage.getItem('wsd_obs')!==null){ unlockApp(sessionStorage.getItem('wsd_obs')||null); return; } }catch(e){}
+  form.addEventListener('submit',e=>{
+    e.preventDefault();
+    const entered=pass.value.trim();
+    if(!entered){ msg.textContent='Enter the password.'; return; }
+    if(!CONFIG.saveEndpoint){ msg.textContent='No login endpoint configured.'; return; }
+    msg.className='gate-msg'; msg.textContent='Checking…'; card.classList.add('busy');
+    const url=CONFIG.saveEndpoint+'?action=login&pass='+encodeURIComponent(entered);
+    jsonp(url).then(res=>{
+      card.classList.remove('busy');
+      if(res && res.ok){
+        msg.className='gate-msg ok'; msg.textContent='Welcome, '+(res.observer||'')+'.';
+        pass.value='';
+        setTimeout(()=>unlockApp(res.observer),300);
+      } else if(res && res.locked){
+        msg.className='gate-msg';
+        msg.textContent='Too many attempts. Try again in '+(res.retryMinutes||30)+' min.';
+        pass.value='';
+      } else if(res && res.remaining!=null){
+        msg.className='gate-msg';
+        msg.textContent='Incorrect password — '+res.remaining+' attempt'+(res.remaining===1?'':'s')+' left.';
+        pass.select();
+      } else {
+        msg.className='gate-msg'; msg.textContent='Incorrect password.'; pass.select();
+      }
+    }).catch(()=>{ card.classList.remove('busy'); msg.textContent='Couldn’t reach the login service — check your connection.'; });
+  });
+  setTimeout(()=>pass.focus(),60);
+})();
+
 </script>
 
 <!-- Sheet write-back endpoint lives in the separate Code.gs file (paste it into Extensions -> Apps Script and deploy a NEW VERSION). -->
