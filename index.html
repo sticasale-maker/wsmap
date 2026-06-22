@@ -162,6 +162,8 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 .sd-ctl .lblrow{display:flex;align-items:center;gap:7px;margin-top:6px;font-size:11px;color:var(--sand);cursor:pointer}
 .sd-ctl .lblrow input{accent-color:var(--isobath)}
 .sd-ctl .domhint{margin:3px 0 2px 21px;font-size:9.5px;color:var(--faint);letter-spacing:.02em}
+.sd-ctl .colwarn{display:none;margin:4px 0 4px 21px;font-size:10px;line-height:1.3;color:#fff;background:var(--danger);border-radius:5px;padding:4px 7px;letter-spacing:.02em}
+.sd-ctl .colwarn.show{display:block}
 .sd-ctl .lrow{display:flex;align-items:center;gap:7px;margin-top:5px;font-size:10.5px;color:var(--sand)}
 .sd-ctl .ldot{width:11px;height:11px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.3)}
 
@@ -715,6 +717,7 @@ state.colonyLayer = L.layerGroup().addTo(map);
   const Ctl=L.Control.extend({options:{position:'topright'},onAdd:function(){
     const d=L.DomUtil.create('div','sd-ctl');
     d.innerHTML='<label class="hd"><input type="checkbox" id="colonyChk"'+(state.colonyOn?' checked':'')+'> Colonies (areas)</label>'
+      +'<div class="colwarn" id="colonyWarn">Switch to <b>Specimens</b> view first</div>'
       +'<div class="domhint">sex-dominant colonies highlighted</div>'
       +`<div class="op"><span>Range</span><input id="colonyR" type="range" min="50" max="500" step="10" value="${state.colonyRadius}"><b id="colonyRv">${state.colonyRadius} m</b></div>`
       +`<label class="lblrow" id="moveRow" style="margin-top:8px;border-top:1px solid var(--line);padding-top:9px"><input type="checkbox" id="moveChk"${state.moveMode?' checked':''}> Move pins (drag to reposition)</label>`
@@ -727,11 +730,14 @@ state.colonyLayer = L.layerGroup().addTo(map);
       +'</details>';
     L.DomEvent.disableClickPropagation(d);L.DomEvent.disableScrollPropagation(d);
     d.querySelector('#colonyChk').addEventListener('change',e=>{
+      const warn=d.querySelector('#colonyWarn');
       if(e.target.checked && currentTab()!=='specimens'){
         e.target.checked=false; state.colonyOn=false;
-        toast('Change visualisation to specimens first');
+        warn.classList.add('show');
+        setTimeout(()=>warn.classList.remove('show'),4000);
         return;
       }
+      warn.classList.remove('show');
       state.colonyOn=e.target.checked; renderColonies(); renderMarkers(); persist();
     });
     const rng=d.querySelector('#colonyR'), rv=d.querySelector('#colonyRv');
@@ -1443,9 +1449,13 @@ function renderColonies(){
         uniq.forEach(ll=>L.circle(ll,{radius:state.colonyRadius/2,color:C,weight:2,opacity:.7,fillColor:C,fillOpacity:.22,interactive:false}).addTo(state.colonyLayer));
       }
     }
-    // count label at the centroid (note the dominant sex when flagged)
+    // count label at the centroid — distinct specimens (latest sightings only)
     const c=centroid;
-    const tag=g.length+' sightings'+(dom?` · ${dom==='M'?'♂':'♀'}-dominant`:'');
+    const idCol=state.map.id;
+    const specSet=new Set(); let blanks=0;
+    g.forEach(p=>{ const id=idCol?String(p.r[idCol]??'').trim():''; if(id) specSet.add(id.toUpperCase()); else blanks++; });
+    const nSpec=specSet.size+blanks;   // each blank-ID pin is its own (unidentified) specimen
+    const tag=nSpec+(nSpec===1?' specimen':' specimens')+(dom?` · ${dom==='M'?'♂':'♀'}-dominant`:'');
     L.marker(c,{interactive:false,icon:L.divIcon({className:'colony-tag'+(dom?' colony-dom':''),html:tag,iconSize:null})}).addTo(state.colonyLayer);
   });
   state.domIds=domIds;
