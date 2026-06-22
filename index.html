@@ -677,7 +677,7 @@ state.colonyLayer = L.layerGroup().addTo(map);
     d.innerHTML='<label class="hd"><input type="checkbox" id="colonyChk"'+(state.colonyOn?' checked':'')+'> Colonies (areas)</label>'
       +`<div class="op"><span>Range</span><input id="colonyR" type="range" min="50" max="500" step="10" value="${state.colonyRadius}"><b id="colonyRv">${state.colonyRadius} m</b></div>`
       +`<label class="lblrow" id="domRow"><input type="checkbox" id="domChk"${state.sexDominanceOn?' checked':''}> Highlight sex-dominant colonies</label>`
-      +'<div class="domhint">≥4 specimens, one sex 2:1+ → pins enlarged & outlined</div>'
+      +'<div class="domhint">≥4 sexed specimens, one sex 2:1+ → pins enlarged & outlined</div>'
       +`<label class="lblrow" id="moveRow" style="margin-top:8px;border-top:1px solid var(--line);padding-top:9px"><input type="checkbox" id="moveChk"${state.moveMode?' checked':''}> Move pins (drag to reposition)</label>`
       +'<div class="domhint">drag a pin, then confirm the new spot</div>'
       +'<details><summary>Pin labels</summary>'
@@ -1251,8 +1251,8 @@ function colonySexDominance(g){
     const key=id||('row:'+p.r._id);
     if(!seen.has(key)) seen.set(key,sexClass(p.r));
   });
-  const sexes=[...seen.values()];
-  if(sexes.length<=3) return null;             // need more than 3 specimens
+  const sexes=[...seen.values()].filter(s=>s==='M'||s==='F'); // sexed specimens only; exclude U/J
+  if(sexes.length<=3) return null;             // need more than 3 sexed specimens
   const m=sexes.filter(s=>s==='M').length, f=sexes.filter(s=>s==='F').length;
   if(m>=2*f && m>f) return 'M';
   if(f>=2*m && f>m) return 'F';
