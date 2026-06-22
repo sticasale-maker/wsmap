@@ -726,7 +726,14 @@ state.colonyLayer = L.layerGroup().addTo(map);
       +SEX_LEGEND.map(([c,n])=>`<div class="lrow"><span class="ldot" style="background:${c}"></span>${n}</div>`).join('')
       +'</details>';
     L.DomEvent.disableClickPropagation(d);L.DomEvent.disableScrollPropagation(d);
-    d.querySelector('#colonyChk').addEventListener('change',e=>{ state.colonyOn=e.target.checked; renderColonies(); renderMarkers(); persist(); });
+    d.querySelector('#colonyChk').addEventListener('change',e=>{
+      if(e.target.checked && currentTab()!=='specimens'){
+        e.target.checked=false; state.colonyOn=false;
+        toast('Change visualisation to specimens first');
+        return;
+      }
+      state.colonyOn=e.target.checked; renderColonies(); renderMarkers(); persist();
+    });
     const rng=d.querySelector('#colonyR'), rv=d.querySelector('#colonyRv');
     rng.addEventListener('input',()=>{ state.colonyRadius=+rng.value; rv.textContent=rng.value+' m'; renderColonies(); renderMarkers(); updateStats(); });
     rng.addEventListener('change',persist);
@@ -750,7 +757,7 @@ state.colonyLayer = L.layerGroup().addTo(map);
 (function(){
   try{ const s=JSON.parse(localStorage.getItem('wsd_editor')||'null');
     if(s){
-      if(typeof s.colonyOn==='boolean') state.colonyOn=s.colonyOn;
+      state.colonyOn=false;   // colonies only valid on specimens tab; app opens on sightings
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       if(window.syncSdCtl) syncSdCtl();
@@ -1514,7 +1521,9 @@ function setTab(t){
   if(t==='specimens'){ gridWrap.style.display='none'; specWrap.style.display='block'; renderSpecimens(); }
   else {
     specWrap.style.display='none'; gridWrap.style.display='block';
-    if(state.specSel&&state.specSel.size){ state.specSel.clear(); renderMarkers(); }
+    if(state.colonyOn){ state.colonyOn=false; if(window.syncSdCtl) syncSdCtl(); persist(); }
+    if(state.specSel&&state.specSel.size){ state.specSel.clear(); }
+    renderColonies(); renderMarkers();
   }
 }
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
@@ -2148,7 +2157,7 @@ function restore(){
     if(s && s.headers && s.headers.length){
       state.headers=s.headers; state.map=Object.assign(state.map,s.map); if(s.sort) state.sort=s.sort;
       if(s.colOrder) state.colOrder=s.colOrder; if(s.colWidth) state.colWidth=s.colWidth;
-      if(typeof s.colonyOn==='boolean') state.colonyOn=s.colonyOn;
+      state.colonyOn=false;   // colonies only valid on specimens tab; app opens on sightings
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
