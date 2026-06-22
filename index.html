@@ -32,17 +32,18 @@ button{cursor:pointer;background:none;border:none}
 #splitter:hover,#splitter.drag{background:var(--isobath-dim)}
 #right{flex:1;position:relative;min-width:280px}
 
-.l-head{padding:14px 16px 11px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--shelf),var(--ink))}
-.l-title{font-family:var(--disp);font-weight:600;font-size:17px;letter-spacing:-.01em;display:flex;align-items:baseline;gap:10px}
+.l-head{padding:18px 18px 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--shelf),var(--ink))}
+.l-title{font-family:var(--disp);font-weight:600;font-size:23px;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px}
 .l-title em{font-style:italic;color:var(--gold)}
-.l-title .badge{font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-family:var(--ui)}
-.l-sub{font-size:11.5px;color:var(--sand-dim);margin-top:6px;display:flex;gap:16px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.l-title .badge{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-family:var(--ui)}
+.l-copy{font-family:var(--ui);font-size:11px;color:var(--faint);margin-top:3px;letter-spacing:.02em}
+.l-sub{font-size:13.5px;color:var(--sand-dim);margin-top:9px;display:flex;gap:18px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
 .l-sub b{color:var(--isobath);font-weight:600}
 
 .toolbar{display:flex;gap:6px;flex-wrap:wrap;padding:9px 16px;border-bottom:1px solid var(--line);align-items:center}
 .timewin{margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
-.tw-row{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--sand-dim);margin-bottom:7px}
-.tw-cap{font-weight:600;color:var(--faint);letter-spacing:.04em;text-transform:uppercase;font-size:9.5px}
+.tw-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--sand-dim);margin-bottom:8px}
+.tw-cap{font-weight:600;color:var(--faint);letter-spacing:.04em;text-transform:uppercase;font-size:11px}
 .tw-val{font-weight:600;color:var(--gold);font-variant-numeric:tabular-nums}
 .tw-dash{color:var(--faint)}
 .tw-reset{margin-left:auto;background:none;border:1px solid var(--line);color:var(--sand-dim);font-size:9.5px;padding:2px 7px;border-radius:5px;cursor:pointer;letter-spacing:.03em}
@@ -407,6 +408,7 @@ body.locked #gate{display:flex}
   <section id="left">
     <div class="l-head">
       <div class="l-title">Weedy Seadragon <em>sightings</em> <span class="badge">VIZ · editor</span></div>
+      <div class="l-copy">© Marco Bordieri · June 2026</div>
       <div class="l-sub">
         <span><b id="statTotal">0</b> sightings</span>
         <span><b id="statMapped">0</b> mapped</span>
@@ -639,7 +641,7 @@ const uid = () => 'r'+Math.random().toString(36).slice(2,9);
    ========================================================================== */
 const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([-33.7926,151.3030],15);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  {attribution:'© OpenStreetMap, © CARTO · data: Seadragon Search · bathymetry: NSW DCCEEW (SEED)',maxZoom:19,subdomains:'abcd'}).addTo(map);
+  {attribution:'© OpenStreetMap, © CARTO · data: Marco Bordieri & Seadragon Search · bathymetry: NSW DCCEEW (SEED)',maxZoom:19,subdomains:'abcd'}).addTo(map);
 
 const SEED=[
   {key:'DEM (depth)', pane:'seedDEM',  z:250,op:1.0, dpi:192,blend:'normal',  base:'https://mapprod2.environment.nsw.gov.au/arcgis/rest/services/Coastal_Marine/NSW_Marine_Lidar_Bathymetry_Data_2018/MapServer/export',show:'show:2',img:null},
