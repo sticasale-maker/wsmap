@@ -535,6 +535,7 @@ body.locked #gate{display:flex}
       <label>Sex<select id="emSex"><option>Unknown</option><option>Male</option><option>Female</option><option>Juvenile</option></select></label>
       <div class="checks" style="align-self:end;padding-bottom:6px">
         <label class="chk"><input type="checkbox" id="emEggs"> Carrying eggs</label>
+        <label class="chk"><input type="checkbox" id="emResight"> Re-sight</label>
         <label class="chk"><input type="checkbox" id="emWaiting"> Waiting for SeadragonSearch ID</label>
       </div>
     </div>
@@ -1824,6 +1825,7 @@ function openEdit(id){
   osel.value = obs || (state.observer||'Marco');
   $('emSex').value      = sexToOption(g(state.map.sex));
   $('emEggs').checked   = state.map.eggs    ? isResighted(g(state.map.eggs)) : false;
+  $('emResight').checked= state.map.resight ? isResighted(g(state.map.resight)) : false;
   $('emWaiting').checked= state.map.waiting ? isWaiting(g(state.map.waiting)) : false;
   removeEditDraft();
   smodal.classList.remove('show');           // never both open at once
@@ -1870,6 +1872,7 @@ function applyEdit(){
   if(editDraft.marker && state.map.position) row[state.map.position]='estimated (map)';  // pin was dragged
   setCol(state.map.sex,      $('emSex').value);
   setCol(state.map.eggs,     $('emEggs').checked?'Y':'');
+  setCol(state.map.resight,  $('emResight').checked?'Y':'');
   setCol(state.map.waiting,  waiting?'Y':'');
 
   markDirty(row._id); refreshMarker(row); renderGrid(); persist();
