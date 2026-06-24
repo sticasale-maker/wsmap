@@ -1395,6 +1395,9 @@ function computeLatest(){
 // is this row drawn on the map?
 function onMap(row){
   if(state.isolateIds){ return state.isolateIds.has(row._id); }   // isolate mode: only the chosen specimen's pins
+  // the Sightings tab is the event log — show every sighting there regardless of
+  // the manual toggle; other tabs keep one pin per animal (latest) unless toggled on.
+  if(currentTab()==='sightings') return true;
   return state.mapAllSightings || state.latestIds.has(row._id) || row._id===state.selId;
 }
 
@@ -1822,11 +1825,11 @@ function setTab(t){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
   // hide all panels first
   gridWrap.style.display='none'; specWrap.style.display='none'; relocWrap.style.display='none';
-  if(t==='specimens'){ specWrap.style.display='block'; clearRelocations(); renderSpecimens(); }
+  if(t==='specimens'){ specWrap.style.display='block'; clearRelocations(); renderSpecimens(); renderColonies(); renderMarkers(); }
   else if(t==='relocations'){
     relocWrap.style.display='block';
     if(state.colonyOn){ state.colonyOn=false; if(window.syncSdCtl) syncSdCtl(); persist(); }
-    clearFlash(); renderRelocations();
+    clearFlash(); renderColonies(); renderMarkers(); renderRelocations();
   }
   else {
     gridWrap.style.display='block';
