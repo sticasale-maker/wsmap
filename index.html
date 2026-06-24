@@ -70,6 +70,8 @@ button{cursor:pointer;background:none;border:none}
 .spec .meta{flex:1;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--sand-dim);font-variant-numeric:tabular-nums}
 .spec .meta>span{min-width:88px}
 .spec .meta>span:first-child{min-width:62px}
+.spec .iso{display:inline-flex;align-items:center;cursor:pointer}
+.spec .iso input{width:16px;height:16px;cursor:pointer;accent-color:#19e3ff}
 .spec-head{position:sticky;top:0;z-index:2;background:var(--ink);cursor:default;border-bottom:1px solid var(--isobath-dim);text-transform:uppercase;letter-spacing:.05em}
 .spec-head:hover{background:var(--ink)}
 .spec-head .sid,.spec-head .meta>span{font-size:9.5px;font-weight:700;color:var(--faint)}
@@ -634,6 +636,7 @@ const state = {
   heatOn:false,
   specimenCount:null,   // data-row count of the Specimens tab (fetched separately)
   latestIds:new Set(),  // _id of each specimen's most-recent sighting — what the MAP shows by default
+  isolateIds:null,      // when set, ONLY these row _ids are drawn (Relocations "Isolate" flag); null = off
   mapAllSightings:false,// false = map shows latest-per-specimen; true = map shows every sighting
   sightings:null,       // {rows,headers,cols} from the raw Sightings tab (event-level, for dashboard)
   observer:null,        // logged-in observer (from the password gate), used to prefill new sightings
@@ -1389,8 +1392,11 @@ function computeLatest(){
   state.rows.forEach(r=>{ const id=idCol?String(r[idCol]??'').trim():''; if(!id) ids.add(r._id); });
   state.latestIds=ids;
 }
-// is this row drawn on the map? all sightings if toggled on, else latest-per-specimen only
-function onMap(row){ return state.mapAllSightings || state.latestIds.has(row._id) || row._id===state.selId; }
+// is this row drawn on the map?
+function onMap(row){
+  if(state.isolateIds){ return state.isolateIds.has(row._id); }   // isolate mode: only the chosen specimen's pins
+  return state.mapAllSightings || state.latestIds.has(row._id) || row._id===state.selId;
+}
 
 function refreshMarker(row){
   const lat=parseFloat(row[state.map.lat]), lng=parseFloat(row[state.map.lng]);
@@ -1731,15 +1737,18 @@ function renderRelocations(){
   const head=document.createElement('div'); head.className='spec spec-head';
   head.innerHTML='<span class="dot dot-h" title="Pin colour = sex"></span>'
     +'<span class="sid">ID</span>'
-    +'<span class="meta"><span>Locations</span><span>Sightings</span><span>Path length</span></span>';
+    +'<span class="meta"><span>Locations</span><span>Sightings</span><span>Path length</span><span>Isolate</span></span>';
   relocWrap.appendChild(head);
   items.forEach(x=>{
     const g=x.g, latest=g.rows[0];
     const el=document.createElement('div'); el.className='spec'; el.dataset.spec=g.key;
+    const isoOn=state.isolateKey===g.key;
     el.innerHTML=`<span class="dot" style="background:${sexColor(latest)}"></span>`
       +`<span class="sid">${g.id}</span>`
-      +`<span class="meta"><span>${x.locs.length}</span><span>${g.rows.length}</span><span>${fmtDist(x.dist)}</span></span>`;
-    el.addEventListener('click',()=>showRelocation(x,el));
+      +`<span class="meta"><span>${x.locs.length}</span><span>${g.rows.length}</span><span>${fmtDist(x.dist)}</span>`
+      +`<span><label class="iso"><input type="checkbox" class="isoChk"${isoOn?' checked':''}> </label></span></span>`;
+    el.addEventListener('click',e=>{ if(e.target.closest('.iso')) return; showRelocation(x,el); });
+    el.querySelector('.isoChk').addEventListener('change',ev=>{ ev.stopPropagation(); toggleIsolate(x,ev.target.checked,el); });
     relocWrap.appendChild(el);
   });
 }
@@ -1787,7 +1796,26 @@ function drawArrowHead(a,b,col){
   const right=map.layerPointToLatLng(L.point(hx-size*Math.cos(ang+spread),hy-size*Math.sin(ang+spread)));
   L.polygon([tip,left,right],{color:col,weight:1,fillColor:col,fillOpacity:.95,opacity:.95,interactive:false}).addTo(state.moveLayer);
 }
-function clearRelocations(){ state.curReloc=null; if(state.moveLayer) state.moveLayer.clearLayers(); }
+function clearRelocations(){ state.curReloc=null; state.isolateKey=null; state.isolateIds=null; if(state.moveLayer) state.moveLayer.clearLayers(); }
+
+// Isolate: hide every pin except the chosen specimen's. Single-select — turning
+// one on turns any other off. Turning it off restores the normal map view.
+function toggleIsolate(x,on,el){
+  if(on){
+    state.isolateKey=x.g.key;
+    state.isolateIds=new Set(x.g.rows.map(r=>r._id));
+    // reflect single-select in the other checkboxes
+    relocWrap.querySelectorAll('.isoChk').forEach(cb=>{ if(cb!==el.querySelector('.isoChk')) cb.checked=false; });
+    showRelocation(x,el);                 // also draws the track + fits the map
+    toast('Isolated '+x.g.id+' — other pins hidden');
+  } else {
+    state.isolateKey=null;
+    state.isolateIds=null;
+    renderMarkers(); renderColonies();
+    toast('Isolate off — all pins shown');
+  }
+  updateStats();
+}
 
 function currentTab(){ const a=document.querySelector('.tab.active'); return a?a.dataset.tab:'sightings'; }
 function setTab(t){
