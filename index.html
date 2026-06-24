@@ -2365,6 +2365,7 @@ function restore(){
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
       state.rows.forEach(r=>{ if(!r._key||!r._orig) snapshotKey(r); });
+      computeLatest();   // cached rows still need latest-per-specimen for the map
       if(s.dirty) state.dirty=new Set(s.dirty);
       if(window.syncSdCtl) syncSdCtl();
       initTimeWindow();
