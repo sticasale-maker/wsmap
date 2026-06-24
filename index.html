@@ -389,6 +389,7 @@ body.locked #gate{display:flex}
 @media(min-width:821px){ body.view-map #left,body.view-data #left{display:flex} }
 .flash-pin{width:40px;height:40px;border-radius:50%;border:4px solid #19e3ff;background:rgba(25,227,255,.25);box-shadow:0 0 12px 2px rgba(25,227,255,.7);animation:flashpin 1.1s ease-out infinite;pointer-events:none}
 @keyframes flashpin{0%{transform:scale(.4);box-shadow:0 0 0 0 rgba(25,227,255,.85),0 0 12px 2px rgba(25,227,255,.7)}70%{transform:scale(1.4);box-shadow:0 0 0 26px rgba(25,227,255,0),0 0 12px 2px rgba(25,227,255,.5)}100%{transform:scale(1);box-shadow:0 0 0 0 rgba(25,227,255,0),0 0 12px 2px rgba(25,227,255,.7)}}
+.reloc-stop{width:20px;height:20px;border-radius:50%;background:#19e3ff;border:2px solid #06303a;color:#06303a;font:700 11px/16px var(--ui);text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 </style>
 </head>
 <body class="view-data locked">
@@ -436,6 +437,7 @@ body.locked #gate{display:flex}
     <div class="tabs">
       <button class="tab active" data-tab="sightings">Sightings</button>
       <button class="tab" data-tab="specimens">Specimens</button>
+      <button class="tab" data-tab="relocations">Relocations</button>
     </div>
 
     <div class="toolbar">
@@ -462,6 +464,7 @@ body.locked #gate{display:flex}
 
     <div class="grid-wrap" id="gridWrap"></div>
     <div class="grid-wrap spec-wrap" id="specWrap" style="display:none"></div>
+    <div class="grid-wrap spec-wrap" id="relocWrap" style="display:none"></div>
   </section>
 
   <div id="splitter"></div>
@@ -691,7 +694,7 @@ function bathyRefresh(){
 }
 map.on('moveend zoomend resize', bathyRefresh);
 // re-fan overlapping pins after a zoom so the spread stays a constant on-screen size
-map.on('zoomend', ()=>{ if(state.rows&&state.rows.length) renderMarkers(); });
+map.on('zoomend', ()=>{ if(state.rows&&state.rows.length) renderMarkers(); if(currentTab()==='relocations' && state.curReloc) redrawRelocArrows(state.curReloc); });
 bathyRefresh();
 (function(){
   const Ctl=L.Control.extend({options:{position:'topright'},onAdd:function(){
@@ -748,6 +751,7 @@ bathyRefresh();
 
 state.markerLayer = L.layerGroup().addTo(map);
 state.colonyLayer = L.layerGroup().addTo(map);
+state.moveLayer = L.layerGroup().addTo(map);   // relocation arrows (Relocations tab)
 /* heatmap layer — sighting density, respects the active time window */
 function renderHeat(){
   if(state.heatLayer){ map.removeLayer(state.heatLayer); state.heatLayer=null; }
@@ -1678,15 +1682,129 @@ function highlightSpecimen(g,el){
   g.rows.forEach(r=>{ if(r._marker) r._marker.openTooltip(); });
   if(window.innerWidth<=820) setView('map');
 }
+
+/* ============================================================================
+   RELOCATIONS TAB  (specimens recorded in 2+ distinct locations; arrows show
+   the movement track across their sightings in chronological order)
+   ========================================================================== */
+const relocWrap=document.getElementById('relocWrap');
+const RELOC_MIN_M=30;   // two sightings must be >30 m apart to count as a distinct location (ignores GPS jitter)
+
+// build the chronological track (oldest→newest) of a specimen's located sightings
+function specimenTrack(g){
+  const dCol=state.map.date;
+  const pts=g.rows
+    .map(r=>({r,lat:parseFloat(r[state.map.lat]),lng:parseFloat(r[state.map.lng]),t:dCol?parseDate(r[dCol]):NaN}))
+    .filter(p=>isFinite(p.lat)&&isFinite(p.lng));
+  // oldest first (g.rows is latest-first); undated rows sink to the start
+  pts.sort((a,b)=>{
+    if(isFinite(a.t)&&isFinite(b.t)) return a.t-b.t;
+    if(isFinite(a.t)) return 1; if(isFinite(b.t)) return -1; return 0;
+  });
+  return pts;
+}
+// distinct locations in a track (collapse points within RELOC_MIN_M of an earlier one)
+function distinctLocs(track){
+  const locs=[];
+  track.forEach(p=>{ if(!locs.some(q=>haversine([q.lat,q.lng],[p.lat,p.lng])<RELOC_MIN_M)) locs.push(p); });
+  return locs;
+}
+// total path length along the chronological track, in metres
+function trackDistance(track){
+  let d=0; for(let i=1;i<track.length;i++) d+=haversine([track[i-1].lat,track[i-1].lng],[track[i].lat,track[i].lng]);
+  return d;
+}
+function buildRelocations(){
+  return buildSpecimens()
+    .filter(g=>g.id!=='unID')                       // need a real specimen id to call it the same animal
+    .map(g=>{ const track=specimenTrack(g); return {g,track,locs:distinctLocs(track),dist:trackDistance(track)}; })
+    .filter(x=>x.locs.length>=2)                     // moved between 2+ distinct locations
+    .sort((a,b)=>b.dist-a.dist);                     // biggest movers first
+}
+function fmtDist(m){ return m>=1000?(m/1000).toFixed(m>=10000?0:1)+' km':Math.round(m)+' m'; }
+function renderRelocations(){
+  const q=document.getElementById('search').value.trim().toLowerCase();
+  let items=buildRelocations();
+  if(q) items=items.filter(x=>x.g.rows.some(r=>state.headers.some(h=>String(r[h]).toLowerCase().includes(q))));
+  if(!items.length){ relocWrap.innerHTML='<div class="empty">No specimens recorded in more than one location yet</div>'; return; }
+  relocWrap.innerHTML='';
+  const head=document.createElement('div'); head.className='spec spec-head';
+  head.innerHTML='<span class="dot dot-h" title="Pin colour = sex"></span>'
+    +'<span class="sid">ID</span>'
+    +'<span class="meta"><span>Locations</span><span>Sightings</span><span>Path length</span></span>';
+  relocWrap.appendChild(head);
+  items.forEach(x=>{
+    const g=x.g, latest=g.rows[0];
+    const el=document.createElement('div'); el.className='spec'; el.dataset.spec=g.key;
+    el.innerHTML=`<span class="dot" style="background:${sexColor(latest)}"></span>`
+      +`<span class="sid">${g.id}</span>`
+      +`<span class="meta"><span>${x.locs.length}</span><span>${g.rows.length}</span><span>${fmtDist(x.dist)}</span></span>`;
+    el.addEventListener('click',()=>showRelocation(x,el));
+    relocWrap.appendChild(el);
+  });
+}
+function redrawRelocArrows(x){
+  if(!state.moveLayer) return;
+  state.moveLayer.clearLayers();
+  const track=x.track, col='#19e3ff';
+  for(let i=1;i<track.length;i++){
+    const a=[track[i-1].lat,track[i-1].lng], b=[track[i].lat,track[i].lng];
+    if(haversine(a,b)<1) continue;   // skip zero-length legs (same spot)
+    L.polyline([a,b],{color:col,weight:3,opacity:.9}).addTo(state.moveLayer);
+    drawArrowHead(a,b,col);
+  }
+  track.forEach((p,i)=>{
+    L.marker([p.lat,p.lng],{interactive:false,zIndexOffset:1500,
+      icon:L.divIcon({className:'',html:`<div class="reloc-stop">${i+1}</div>`,iconSize:[20,20],iconAnchor:[10,10]})
+    }).addTo(state.moveLayer);
+  });
+}
+// draw the movement track for one specimen: numbered stops + directional arrows
+function showRelocation(x,el){
+  state.curReloc=x;   // remember for zoom redraw (arrowheads are pixel-space)
+  relocWrap.querySelectorAll('.spec').forEach(n=>n.classList.remove('sel'));
+  if(el) el.classList.add('sel');
+  state.selId=null;
+  state.specSel=new Set(x.g.rows.map(r=>r._id));
+  clearFlash();
+  renderMarkers();
+  redrawRelocArrows(x);
+  const track=x.track;
+  const pts=track.map(p=>[p.lat,p.lng]);
+  if(pts.length===1) map.setView(pts[0],Math.max(map.getZoom(),16),{animate:true});
+  else map.fitBounds(pts,{padding:[70,70],maxZoom:16});
+  if(window.innerWidth<=820) setView('map');
+}
+// place a small arrowhead near the END of leg a→b, pointing in the direction of travel
+function drawArrowHead(a,b,col){
+  const pA=map.latLngToLayerPoint(a), pB=map.latLngToLayerPoint(b);
+  const ang=Math.atan2(pB.y-pA.y,pB.x-pA.x);
+  // position the head ~70% along the leg so it sits on the line, not under the end badge
+  const hx=pA.x+(pB.x-pA.x)*0.7, hy=pA.y+(pB.y-pA.y)*0.7;
+  const size=10, spread=0.5;
+  const tip=map.layerPointToLatLng(L.point(hx,hy));
+  const left=map.layerPointToLatLng(L.point(hx-size*Math.cos(ang-spread),hy-size*Math.sin(ang-spread)));
+  const right=map.layerPointToLatLng(L.point(hx-size*Math.cos(ang+spread),hy-size*Math.sin(ang+spread)));
+  L.polygon([tip,left,right],{color:col,weight:1,fillColor:col,fillOpacity:.95,opacity:.95,interactive:false}).addTo(state.moveLayer);
+}
+function clearRelocations(){ state.curReloc=null; if(state.moveLayer) state.moveLayer.clearLayers(); }
+
 function currentTab(){ const a=document.querySelector('.tab.active'); return a?a.dataset.tab:'sightings'; }
 function setTab(t){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
-  if(t==='specimens'){ gridWrap.style.display='none'; specWrap.style.display='block'; renderSpecimens(); }
+  // hide all panels first
+  gridWrap.style.display='none'; specWrap.style.display='none'; relocWrap.style.display='none';
+  if(t==='specimens'){ specWrap.style.display='block'; clearRelocations(); renderSpecimens(); }
+  else if(t==='relocations'){
+    relocWrap.style.display='block';
+    if(state.colonyOn){ state.colonyOn=false; if(window.syncSdCtl) syncSdCtl(); persist(); }
+    clearFlash(); renderRelocations();
+  }
   else {
-    specWrap.style.display='none'; gridWrap.style.display='block';
+    gridWrap.style.display='block';
     if(state.colonyOn){ state.colonyOn=false; if(window.syncSdCtl) syncSdCtl(); persist(); }
     if(state.specSel&&state.specSel.size){ state.specSel.clear(); }
-    clearFlash();
+    clearFlash(); clearRelocations();
     renderColonies(); renderMarkers();
   }
 }
@@ -2417,7 +2535,7 @@ function restore(){
   }catch(e){}
   return false;
 }
-document.getElementById('search').addEventListener('input',()=>{ renderGrid(); if(currentTab()==='specimens') renderSpecimens(); });
+document.getElementById('search').addEventListener('input',()=>{ renderGrid(); if(currentTab()==='specimens') renderSpecimens(); else if(currentTab()==='relocations') renderRelocations(); });
 
 /* ============================================================================
    SPLITTER + MOBILE TOGGLE + KEYS
