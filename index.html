@@ -535,7 +535,6 @@ body.locked #gate{display:flex}
       <label>Sex<select id="emSex"><option>Unknown</option><option>Male</option><option>Female</option><option>Juvenile</option></select></label>
       <div class="checks" style="align-self:end;padding-bottom:6px">
         <label class="chk"><input type="checkbox" id="emEggs"> Carrying eggs</label>
-        <label class="chk"><input type="checkbox" id="emResight"> Re-sight</label>
         <label class="chk"><input type="checkbox" id="emWaiting"> Waiting for SeadragonSearch ID</label>
       </div>
     </div>
@@ -608,9 +607,9 @@ body.locked #gate{display:flex}
    ========================================================================== */
 const CONFIG = {
   sheetId:'1UnTxSU3phEKkjEbf_bDGBPRh-xYH4Cm1vH5zcg36t2Y',
-  sheetGid:'680128058',
-  specimensGid:'2124826284',  // gid of the Specimens tab — the "individuals" stat is its data-row count. Blank = fall back to local dedup of map_latest.
-  sightingsGid:'1685375402',  // gid of the raw Sightings tab — feeds the dashboard's brooding (eggs/col E) and resight (is_resight) panels. Blank = those panels fall back to map_latest.
+  sheetGid:'1685375402',      // PRIMARY source: the raw Sightings tab (every event). map_latest is retired.
+  specimensGid:'2124826284',  // gid of the Specimens tab — the "individuals" stat is its data-row count. Blank = fall back to local dedup.
+  sightingsGid:'1685375402',  // same raw Sightings tab — feeds the dashboard's brooding (eggs/col E) and resight (is_resight) panels.
   defaultHeaders:['id','date','lat','lng','depth_m','count','sex','site','comments','observer'],
   saveEndpoint:'https://script.google.com/macros/s/AKfycbz4kUIX0stdlHtS9SeenbEoPm_6GoV3xI0Tb7aigyF8tHEGooyyMAlyXqBQQXHfOYak/exec',
   notesHeader:'',  // set to the exact map_latest header that holds your dive notes, e.g. 'notes'. Blank = auto-detect.
@@ -629,6 +628,8 @@ const state = {
   tw:{min:null,max:null,lo:null,hi:null},   // date window: epoch-day bounds (lo/hi = selected)
   heatOn:false,
   specimenCount:null,   // data-row count of the Specimens tab (fetched separately)
+  latestIds:new Set(),  // _id of each specimen's most-recent sighting — what the MAP shows by default
+  mapAllSightings:false,// false = map shows latest-per-specimen; true = map shows every sighting
   sightings:null,       // {rows,headers,cols} from the raw Sightings tab (event-level, for dashboard)
   observer:null,        // logged-in observer (from the password gate), used to prefill new sightings
   labelOpts:{id:true,date:false,resights:false,depth:false,position:false},
@@ -779,6 +780,8 @@ function renderHeat(){
       +`<label class="lblrow" id="moveRow" style="margin-top:8px;border-top:1px solid var(--line);padding-top:9px"><input type="checkbox" id="moveChk"${state.moveMode?' checked':''}> Move pins (drag to reposition)</label>`
       +'<div class="domhint">drag a pin, then confirm the new spot</div>'
       +`<label class="lblrow" id="heatRow" style="margin-top:8px;border-top:1px solid var(--line);padding-top:9px"><input type="checkbox" id="heatChk"${state.heatOn?' checked':''}> Heatmap (sighting density)</label>`
+      +`<label class="lblrow" id="allRow"><input type="checkbox" id="allChk"${state.mapAllSightings?' checked':''}> Show every sighting (not just latest)</label>`
+      +'<div class="domhint">off = one pin per animal (latest); on = full history</div>'
       +'<details><summary>Pin labels</summary>'
       +LABEL_FIELDS.map(([k,n])=>`<label class="lblrow"><input type="checkbox" data-lbl="${k}"${state.labelOpts[k]?' checked':''}> ${n}</label>`).join('')
       +'</details>'
@@ -803,6 +806,7 @@ function renderHeat(){
     d.querySelector('#moveChk').addEventListener('change',e=>{ state.moveMode=e.target.checked; renderMarkers();
       toast(state.moveMode?'Move mode on — drag a pin to reposition it':'Move mode off'); });
     d.querySelector('#heatChk').addEventListener('change',e=>{ state.heatOn=e.target.checked; renderHeat(); persist(); });
+    d.querySelector('#allChk').addEventListener('change',e=>{ state.mapAllSightings=e.target.checked; renderMarkers(); renderColonies(); persist(); toast(state.mapAllSightings?'Map showing every sighting':'Map showing latest per animal'); });
     d.querySelectorAll('input[data-lbl]').forEach(cb=>cb.addEventListener('change',()=>{
       state.labelOpts[cb.dataset.lbl]=cb.checked; renderMarkers(); persist();
     }));
@@ -811,6 +815,7 @@ function renderHeat(){
       d.querySelector('#colonyChk').checked=state.colonyOn;
       d.querySelector('#moveChk').checked=state.moveMode;
       d.querySelector('#heatChk').checked=state.heatOn;
+      if(d.querySelector('#allChk')) d.querySelector('#allChk').checked=state.mapAllSightings;
       rng.value=state.colonyRadius; rv.textContent=state.colonyRadius+' m';
       d.querySelectorAll('input[data-lbl]').forEach(cb=>{ cb.checked=!!state.labelOpts[cb.dataset.lbl]; });
     };
@@ -824,6 +829,7 @@ function renderHeat(){
     if(s){
       state.colonyOn=false;   // colonies only valid on specimens tab; app opens on sightings
       if(typeof s.heatOn==='boolean') state.heatOn=s.heatOn;
+      if(typeof s.mapAllSightings==='boolean') state.mapAllSightings=s.mapAllSightings;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       if(window.syncSdCtl) syncSdCtl();
@@ -1058,6 +1064,7 @@ function ingest(parsed,fit){
   // freeze each row's original key BEFORE any edits, so write-back matches the
   // correct Sightings row even if the user later edits the date or coordinates
   state.rows.forEach(snapshotKey);
+  computeLatest();   // determine each specimen's most-recent sighting for the map & Specimens tab
   state.dirty.clear();
   if(state.map.date) state.sort={col:state.map.date,dir:-1}; // newest first by default
   initTimeWindow();
@@ -1351,12 +1358,41 @@ function movePinIcon(color,emph){
   return L.divIcon({className:'',iconSize:[size,size+6],iconAnchor:[r,size+4],
     html:`<div class="move-pin" style="--pc:${color}"><svg viewBox="0 0 24 30" width="${size}" height="${size+6}"><path d="M12 0C6 0 1.5 4.5 1.5 10.5 1.5 18 12 30 12 30s10.5-12 10.5-19.5C22.5 4.5 18 0 12 0z" fill="${color}" stroke="#fff" stroke-width="1.6"/><circle cx="12" cy="10.5" r="3.4" fill="#06141d"/></svg></div>`});
 }
+/* Latest-per-specimen: for each specimen id pick the row with the most recent
+   date (ties broken by the highest sighting_id, then last loaded). Unidentified
+   rows (blank specimen id) are each their own "specimen" and always count as
+   latest. Populates state.latestIds with the winning rows' _id. */
+function computeLatest(){
+  const idCol=state.map.id, dCol=state.map.date, sidCol=state.map.sightingId;
+  const best=new Map();   // specimen id -> {row, t, sid}
+  state.rows.forEach(r=>{
+    const id=idCol?String(r[idCol]??'').trim().toUpperCase():'';
+    if(!id){ return; }    // unID rows handled below (always latest)
+    const t=dCol?parseDate(r[dCol]):NaN;
+    const sid=sidCol?parseFloat(r[sidCol]):NaN;
+    const cur=best.get(id);
+    const better = !cur
+      || (isFinite(t)&&!isFinite(cur.t))
+      || (isFinite(t)&&isFinite(cur.t)&&t>cur.t)
+      || (((isFinite(t)&&isFinite(cur.t)&&t===cur.t)||(!isFinite(t)&&!isFinite(cur.t))) && isFinite(sid)&&(!isFinite(cur.sid)||sid>cur.sid));
+    if(better) best.set(id,{row:r,t,sid});
+  });
+  const ids=new Set();
+  best.forEach(v=>ids.add(v.row._id));
+  // every blank-ID (unidentified) row is its own specimen and always shown
+  state.rows.forEach(r=>{ const id=idCol?String(r[idCol]??'').trim():''; if(!id) ids.add(r._id); });
+  state.latestIds=ids;
+}
+// is this row drawn on the map? all sightings if toggled on, else latest-per-specimen only
+function onMap(row){ return state.mapAllSightings || state.latestIds.has(row._id); }
+
 function refreshMarker(row){
   const lat=parseFloat(row[state.map.lat]), lng=parseFloat(row[state.map.lng]);
   if(row._marker){ state.markerLayer.removeLayer(row._marker); row._marker=null; }
   if(row._leg){ state.markerLayer.removeLayer(row._leg); row._leg=null; }
   if(!isFinite(lat)||!isFinite(lng)) return;
   if(!inWindow(row)) return;                 // hidden by the time window
+  if(!onMap(row)) return;                    // map shows latest-per-specimen unless toggled
   // display position: spider-offset if this pin overlaps others, else true coords
   const off=(state.spider&&state.spider[row._id])||{lat,lng};
   const dLat=off.lat, dLng=off.lng;
@@ -1407,7 +1443,7 @@ function computeSpiderOffsets(){
   // group rows by near-identical true coordinates (within ~3 m)
   const pts=state.rows
     .map(r=>({r,lat:parseFloat(r[state.map.lat]),lng:parseFloat(r[state.map.lng])}))
-    .filter(p=>isFinite(p.lat)&&isFinite(p.lng)&&inWindow(p.r));
+    .filter(p=>isFinite(p.lat)&&isFinite(p.lng)&&inWindow(p.r)&&onMap(p.r));
   const groups=[]; const TOL=3; // metres
   pts.forEach(p=>{
     let g=groups.find(grp=>haversine([grp.lat,grp.lng],[p.lat,p.lng])<TOL);
@@ -1440,7 +1476,7 @@ function computeSpiderOffsets(){
 function computeColonies(){
   const pts=state.rows
     .map(r=>({r,lat:parseFloat(r[state.map.lat]),lng:parseFloat(r[state.map.lng])}))
-    .filter(p=>isFinite(p.lat)&&isFinite(p.lng)&&inWindow(p.r));
+    .filter(p=>isFinite(p.lat)&&isFinite(p.lng)&&inWindow(p.r)&&onMap(p.r));
   const n=pts.length, parent=pts.map((_,i)=>i);
   const find=i=>{ while(parent[i]!==i){ parent[i]=parent[parent[i]]; i=parent[i]; } return i; };
   const uni=(i,j)=>{ parent[find(i)]=find(j); };
@@ -1544,12 +1580,23 @@ function selectRow(id,scroll,fromMap){
    ========================================================================== */
 const specWrap=document.getElementById('specWrap');
 function buildSpecimens(){
-  const idCol=state.map.id; const groups=new Map();
+  const idCol=state.map.id; const dCol=state.map.date; const groups=new Map();
   state.rows.forEach(r=>{
     const id=idCol?String(r[idCol]??'').trim():'';
     const key=id||('unID:'+r._id);
     if(!groups.has(key)) groups.set(key,{key,id:id||'unID',rows:[]});
     groups.get(key).rows.push(r);
+  });
+  // within each specimen, order sightings latest-first so g.rows[0] is the most
+  // recent (drives the dot colour, latest-date, depth shown in the Specimens tab)
+  groups.forEach(g=>{
+    g.rows.sort((a,b)=>{
+      const ta=dCol?parseDate(a[dCol]):NaN, tb=dCol?parseDate(b[dCol]):NaN;
+      if(isFinite(ta)&&isFinite(tb)&&ta!==tb) return tb-ta;
+      if(isFinite(tb)&&!isFinite(ta)) return 1;
+      if(isFinite(ta)&&!isFinite(tb)) return -1;
+      return 0;
+    });
   });
   return [...groups.values()];
 }
@@ -1567,14 +1614,14 @@ function renderSpecimens(){
     +'<span class="meta"><span>Sex</span><span>Latest sighting</span><span>Depth</span></span>';
   specWrap.appendChild(head);
   groups.forEach(g=>{
-    const first=g.rows[0];
+    const first=g.rows[0];   // latest sighting (rows are ordered latest-first)
     const sx=state.map.sex?(first[state.map.sex]||''):'';
     const dates=g.rows.map(r=>r[state.map.date]).filter(Boolean);
     const depth=state.map.depth?(first[state.map.depth]||''):'';
     const el=document.createElement('div'); el.className='spec'; el.dataset.spec=g.key;
     el.innerHTML=`<span class="dot" style="background:${sexColor(first)}"></span>`
       +`<span class="sid">${g.id}</span>`
-      +`<span class="meta"><span>${sx||'—'}</span><span>${dates.length?dates[dates.length-1]:'—'}</span><span>${depth?depth+' m':'—'}</span></span>`;
+      +`<span class="meta"><span>${sx||'—'}</span><span>${dates.length?dates[0]:'—'}</span><span>${depth?depth+' m':'—'}</span></span>`;
     el.addEventListener('click',()=>highlightSpecimen(g,el));
     specWrap.appendChild(el);
   });
@@ -1702,7 +1749,7 @@ function doDelete(){
     };
     state.rows=state.rows.filter(r=>r._id!==id);
     if(state.selId===id) state.selId=null;
-    renderAll(); persist();
+    computeLatest(); renderAll(); persist();
     if(CONFIG.saveEndpoint && (match.lat!=='' && match.lon!=='')){
       fetch(CONFIG.saveEndpoint,{method:'POST',mode:'no-cors',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -1774,7 +1821,7 @@ function appendLocalRow(rec){
   set(state.map.comments,rec.comments); set(state.map.observer,rec.observer);
   set(state.map.eggs,rec.eggs); set(state.map.resight,rec.resight); set(state.map.waiting,rec.waiting); set(state.map.position,rec.position);
   snapshotKey(o);
-  state.rows.push(o); renderAll(); persist(); selectRow(o._id,true,true);
+  state.rows.push(o); computeLatest(); renderAll(); persist(); selectRow(o._id,true,true);
 }
 function commitSighting(){
   const rec=gatherRecord();
@@ -1825,7 +1872,6 @@ function openEdit(id){
   osel.value = obs || (state.observer||'Marco');
   $('emSex').value      = sexToOption(g(state.map.sex));
   $('emEggs').checked   = state.map.eggs    ? isResighted(g(state.map.eggs)) : false;
-  $('emResight').checked= state.map.resight ? isResighted(g(state.map.resight)) : false;
   $('emWaiting').checked= state.map.waiting ? isWaiting(g(state.map.waiting)) : false;
   removeEditDraft();
   smodal.classList.remove('show');           // never both open at once
@@ -1872,10 +1918,9 @@ function applyEdit(){
   if(editDraft.marker && state.map.position) row[state.map.position]='estimated (map)';  // pin was dragged
   setCol(state.map.sex,      $('emSex').value);
   setCol(state.map.eggs,     $('emEggs').checked?'Y':'');
-  setCol(state.map.resight,  $('emResight').checked?'Y':'');
   setCol(state.map.waiting,  waiting?'Y':'');
 
-  markDirty(row._id); refreshMarker(row); renderGrid(); persist();
+  markDirty(row._id); computeLatest(); renderMarkers(); renderGrid(); persist();
   toast('Row updated — Save to write to the Sheet');
   closeEdit();
 }
@@ -2231,7 +2276,7 @@ document.getElementById('svConfirm').addEventListener('click',doSave);
    ========================================================================== */
 function updateStats(){
   const vis=state.rows.filter(inWindow);
-  const mapped=vis.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
+  const mapped=vis.filter(r=>onMap(r)&&isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
   const idCol=state.map.id;
   const specSet=new Set(); let blanks=0;
   vis.forEach(r=>{ const id=idCol?String(r[idCol]??'').trim():''; if(id) specSet.add(id.toUpperCase()); else blanks++; });
@@ -2304,7 +2349,7 @@ function persist(){
   try{ localStorage.setItem('wsd_editor',JSON.stringify({
     headers:state.headers, map:state.map, sort:state.sort,
     colOrder:state.colOrder, colWidth:state.colWidth, dirty:[...state.dirty],
-    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, heatOn:state.heatOn, labelOpts:state.labelOpts,
+    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, heatOn:state.heatOn, mapAllSightings:state.mapAllSightings, labelOpts:state.labelOpts,
     rows:state.rows.map(r=>{ const {_marker,...rest}=r; return rest; })
   })); }catch(e){}
 }
@@ -2315,6 +2360,7 @@ function restore(){
       if(s.colOrder) state.colOrder=s.colOrder; if(s.colWidth) state.colWidth=s.colWidth;
       state.colonyOn=false;   // colonies only valid on specimens tab; app opens on sightings
       if(typeof s.heatOn==='boolean') state.heatOn=s.heatOn;
+      if(typeof s.mapAllSightings==='boolean') state.mapAllSightings=s.mapAllSightings;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
