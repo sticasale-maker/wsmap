@@ -640,6 +640,7 @@ const state = {
   latestIds:new Set(),  // _id of each specimen's most-recent sighting — what the MAP shows by default
   isolateIds:null,      // when set, ONLY these row _ids are drawn (Relocations "Isolate" flag); null = off
   mapAllSightings:false,// false = map shows latest-per-specimen; true = map shows every sighting
+  showPins:true,        // master toggle for the sighting pins; off = labels-only (clean map)
   sightings:null,       // {rows,headers,cols} from the raw Sightings tab (event-level, for dashboard)
   observer:null,        // logged-in observer (from the password gate), used to prefill new sightings
   labelOpts:{id:true,date:false,resights:false,depth:false,position:false},
@@ -794,6 +795,8 @@ function renderHeat(){
       +`<label class="lblrow" id="allRow"><input type="checkbox" id="allChk"${state.mapAllSightings?' checked':''}> Show every sighting (not just latest)</label>`
       +'<div class="domhint">off = one pin per animal (latest); on = full history</div>'
       +'<details><summary>Pin labels</summary>'
+      +`<label class="lblrow"><input type="checkbox" id="showPinsChk"${state.showPins?' checked':''}> Show the pins</label>`
+      +'<div class="domhint">off = labels only (clean map)</div>'
       +LABEL_FIELDS.map(([k,n])=>`<label class="lblrow"><input type="checkbox" data-lbl="${k}"${state.labelOpts[k]?' checked':''}> ${n}</label>`).join('')
       +'</details>'
       +'<details><summary>Pin colours</summary>'
@@ -821,12 +824,17 @@ function renderHeat(){
     d.querySelectorAll('input[data-lbl]').forEach(cb=>cb.addEventListener('change',()=>{
       state.labelOpts[cb.dataset.lbl]=cb.checked; renderMarkers(); persist();
     }));
+    d.querySelector('#showPinsChk').addEventListener('change',e=>{
+      state.showPins=e.target.checked; renderMarkers(); persist();
+      toast(state.showPins?'Pins shown':'Pins hidden — labels only');
+    });
     // keep control inputs in sync if prefs are restored after the control is built
     window.syncSdCtl=()=>{
       d.querySelector('#colonyChk').checked=state.colonyOn;
       d.querySelector('#moveChk').checked=state.moveMode;
       d.querySelector('#heatChk').checked=state.heatOn;
       if(d.querySelector('#allChk')) d.querySelector('#allChk').checked=state.mapAllSightings;
+      if(d.querySelector('#showPinsChk')) d.querySelector('#showPinsChk').checked=state.showPins;
       rng.value=state.colonyRadius; rv.textContent=state.colonyRadius+' m';
       d.querySelectorAll('input[data-lbl]').forEach(cb=>{ cb.checked=!!state.labelOpts[cb.dataset.lbl]; });
     };
@@ -841,6 +849,7 @@ function renderHeat(){
       state.colonyOn=false;   // colonies only valid on specimens tab; app opens on sightings
       if(typeof s.heatOn==='boolean') state.heatOn=s.heatOn;
       if(typeof s.mapAllSightings==='boolean') state.mapAllSightings=s.mapAllSightings;
+      if(typeof s.showPins==='boolean') state.showPins=s.showPins;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       if(window.syncSdCtl) syncSdCtl();
@@ -1417,6 +1426,17 @@ function refreshMarker(row){
   const sel=row._id===state.selId || (state.specSel&&state.specSel.has(row._id));
   const emph=state.domIds&&state.domIds.has(row._id);   // pin inside a sex-dominant colony
   const perm=anyLabelOpt(), txt=perm?pinLabel(row):labelFor(row);
+  // PINS HIDDEN: skip the dot/teardrop. If a label field is on, still drop the
+  // label at the location (anchored to an invisible marker) for a clean map.
+  if(!state.showPins){
+    if(perm && txt){
+      const lm=L.marker([dLat,dLng],{icon:L.divIcon({className:'',iconSize:[0,0]}),keyboard:false,zIndexOffset:sel?1000:0});
+      lm.bindTooltip(txt,{className:'sd-label sd-perm',direction:'top',offset:[0,0],permanent:true});
+      lm.on('click',()=>selectRow(row._id,true,true));
+      lm.addTo(state.markerLayer); row._marker=lm;
+    }
+    return;
+  }
   // faint leader line from the offset pin back to the real location
   if(spread){
     row._leg=L.polyline([[lat,lng],[dLat,dLng]],{color:'#7fb3cc',weight:1,opacity:.5,interactive:false,dashArray:'2,2'});
@@ -2543,7 +2563,7 @@ function persist(){
   try{ localStorage.setItem('wsd_editor',JSON.stringify({
     headers:state.headers, map:state.map, sort:state.sort,
     colOrder:state.colOrder, colWidth:state.colWidth, dirty:[...state.dirty],
-    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, heatOn:state.heatOn, mapAllSightings:state.mapAllSightings, labelOpts:state.labelOpts,
+    colonyOn:state.colonyOn, colonyRadius:state.colonyRadius, heatOn:state.heatOn, mapAllSightings:state.mapAllSightings, showPins:state.showPins, labelOpts:state.labelOpts,
     rows:state.rows.map(r=>{ const {_marker,...rest}=r; return rest; })
   })); }catch(e){}
 }
@@ -2555,6 +2575,7 @@ function restore(){
       state.colonyOn=false;   // colonies only valid on specimens tab; app opens on sightings
       if(typeof s.heatOn==='boolean') state.heatOn=s.heatOn;
       if(typeof s.mapAllSightings==='boolean') state.mapAllSightings=s.mapAllSightings;
+      if(typeof s.showPins==='boolean') state.showPins=s.showPins;
       if(s.colonyRadius) state.colonyRadius=s.colonyRadius;
       if(s.labelOpts) state.labelOpts=Object.assign(state.labelOpts,s.labelOpts);
       state.rows=s.rows.map(r=>({_id:r._id||uid(),...r}));
