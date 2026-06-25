@@ -2492,9 +2492,18 @@ function updateStats(){
   // of the latest-only display toggle. This is the count of locatable sightings.
   const mapped=vis.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
   const idCol=state.map.id;
-  const specSet=new Set(); let blanks=0;
-  vis.forEach(r=>{ const id=idCol?String(r[idCol]??'').trim():''; if(id) specSet.add(id.toUpperCase()); else blanks++; });
-  const indiv=twActive()?(specSet.size+blanks):((state.specimenCount!=null)?state.specimenCount:buildSpecimens().length);
+  // "individuals" = distinct ASSIGNED specimens with a sighting in the current window.
+  // ID is normalised so leading-zero variants collapse (0531M === 531M). Blank-ID rows
+  // are provisional sightings, not individuals, so they don't inflate the count. The
+  // SAME rule is used whether or not the time window is active, so the number is
+  // continuous across the slider and can only shrink as the window narrows — never jump
+  // up. (Previously: full window read the Specimens-tab row count, but the instant the
+  // slider moved it switched to specSet.size+blanks, a different source AND a different
+  // rule — that mismatch was the 102->119 jump.)
+  const normId=v=>String(v??'').trim().toUpperCase().replace(/^0+(?=\d)/,'');
+  const specSet=new Set();
+  vis.forEach(r=>{ const id=idCol?normId(r[idCol]):''; if(id) specSet.add(id); });
+  const indiv=specSet.size;
   const col=computeColonies().length;                  // clusters found by the colony selector (current range)
   document.getElementById('statTotal').textContent=vis.length;
   document.getElementById('statMapped').textContent=mapped;
