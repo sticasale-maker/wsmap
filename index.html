@@ -392,6 +392,24 @@ body.locked #gate{display:flex}
 .flash-pin{width:40px;height:40px;border-radius:50%;border:4px solid #19e3ff;background:rgba(25,227,255,.25);box-shadow:0 0 12px 2px rgba(25,227,255,.7);animation:flashpin 1.1s ease-out infinite;pointer-events:none}
 @keyframes flashpin{0%{transform:scale(.4);box-shadow:0 0 0 0 rgba(25,227,255,.85),0 0 12px 2px rgba(25,227,255,.7)}70%{transform:scale(1.4);box-shadow:0 0 0 26px rgba(25,227,255,0),0 0 12px 2px rgba(25,227,255,.5)}100%{transform:scale(1);box-shadow:0 0 0 0 rgba(25,227,255,0),0 0 12px 2px rgba(25,227,255,.7)}}
 .reloc-stop{width:20px;height:20px;border-radius:50%;background:#19e3ff;border:2px solid #06303a;color:#06303a;font:700 11px/16px var(--ui);text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+/* ---- injected: draw-selection + depth-by-site chart (ported from explorer) ---- */
+:root{--teal:#4fd1c5;--amber:#f2c14e;--muted:#84a6b3}
+#drawBtn.on2{background:var(--teal);color:var(--abyss);border-color:var(--teal)}
+.dchart{margin:0;padding:10px 12px 11px;background:var(--shelf);border-top:1px solid var(--line);border-bottom:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.dchart .ct{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin-bottom:6px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.dchart .depthbars{height:200px;display:flex;flex-direction:column;gap:1px;justify-content:flex-start;overflow-y:auto;overflow-x:hidden;padding-right:4px;min-height:0}
+.dchart .depthbars.fill{justify-content:flex-start}
+.dchart .depthbars::-webkit-scrollbar{width:5px}
+.dchart .depthbars::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.dband{display:flex;align-items:center;gap:6px}
+.dband .db{height:8px;background:linear-gradient(90deg,var(--teal),var(--amber));border-radius:2px;min-width:1px;transition:width .2s}
+.dband .dn{font-size:9px;color:var(--faint);font-variant-numeric:tabular-nums}
+.dseg{display:flex;gap:3px}
+.dseg button{background:none;border:1px solid var(--line);color:var(--faint);font-family:inherit;font-size:9px;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:5px;cursor:pointer;line-height:1.2}
+.dseg button:hover{color:var(--teal);border-color:var(--teal)}
+.dseg button.on{background:var(--teal);color:var(--abyss);border-color:var(--teal)}
+.dnote{font-size:9.5px;color:var(--faint);line-height:1.4;margin-top:4px;font-style:italic}
+.dchart .depthbars svg text{font-family:'Inter',sans-serif}
 </style>
 </head>
 <body class="view-data locked">
@@ -459,10 +477,23 @@ body.locked #gate{display:flex}
       <button class="btn" id="btnExportMap"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>Save map PNG</button>
     </div>
 
+    <div class="toolbar" style="border-top:none" id="drawGroup">
+      <button class="btn" id="drawBtn" title="Draw a lasso on the map to select the sightings inside it">✏ Draw area on map</button>
+      <button class="btn" id="drawClear" style="display:none" title="Clear the drawn selection">✕ Clear drawn area</button>
+      <div class="tool-spacer"></div>
+    </div>
+
     <div class="savebar" id="saveBar">
       <span class="sb-msg"><b id="saveCount">0</b> unsaved <span class="sb-w">change(s)</span></span>
       <div class="tool-spacer"></div>
       <button class="btn coral" id="btnSave"><svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7"/><path d="M8 14h8"/></svg>Save changes</button>
+    </div>
+
+    <div class="dchart" id="depthChart">
+      <div class="ct"><span id="depthTitle">Depth profile</span>
+        <span class="dseg" id="depthSeg"><button data-v="profile" class="on">Profile</button><button data-v="spread">By site</button></span>
+      </div>
+      <div class="depthbars fill" id="depthBars"></div>
     </div>
 
     <div class="grid-wrap" id="gridWrap"></div>
@@ -764,7 +795,7 @@ function renderHeat(){
   if(!state.heatOn) return;
   if(typeof L.heatLayer!=='function'){ toast('Heatmap library not loaded'); return; }
   const pts=state.rows
-    .filter(r=>inWindow(r))
+    .filter(r=>inWindow(r)&&rowInSel(r))
     .map(r=>[parseFloat(r[state.map.lat]),parseFloat(r[state.map.lng])])
     .filter(p=>isFinite(p[0])&&isFinite(p[1]))
     .map(p=>[p[0],p[1],0.8]);
@@ -1417,6 +1448,7 @@ function refreshMarker(row){
   if(row._marker){ state.markerLayer.removeLayer(row._marker); row._marker=null; }
   if(row._leg){ state.markerLayer.removeLayer(row._leg); row._leg=null; }
   if(!isFinite(lat)||!isFinite(lng)) return;
+  if(state.poly && !inPoly(lat,lng,state.poly)) return;   // outside the drawn selection
   if(!inWindow(row)) return;                 // hidden by the time window
   if(!onMap(row)) return;                    // map shows latest-per-specimen unless toggled
   // display position: spider-offset if this pin overlaps others, else true coords
@@ -2487,7 +2519,7 @@ document.getElementById('svConfirm').addEventListener('click',doSave);
    STATS / ORCHESTRATION / PERSISTENCE
    ========================================================================== */
 function updateStats(){
-  const vis=state.rows.filter(inWindow);
+  const vis=state.rows.filter(r=>inWindow(r)&&rowInSel(r));
   // "mapped" = sightings that HAVE coordinates (a data-quality count), independent
   // of the latest-only display toggle. This is the count of locatable sightings.
   const mapped=vis.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
@@ -2510,7 +2542,7 @@ function updateStats(){
   document.getElementById('statIndiv').textContent=indiv;
   document.getElementById('statColonies').textContent=col;
 }
-function renderAll(){ renderGrid(); renderColonies(); renderMarkers(); updateStats(); if(currentTab()==='specimens') renderSpecimens(); }
+function renderAll(){ renderGrid(); renderColonies(); renderMarkers(); updateStats(); drawDepthPanel(); if(currentTab()==='specimens') renderSpecimens(); }
 
 /* ============================================================================
    TIME WINDOW  (filter sightings by day across grid, map, colonies, heatmap)
@@ -2760,6 +2792,110 @@ function bootApp(){
   });
   setTimeout(()=>pass.focus(),60);
 })();
+
+/* ============================================================================
+   INJECTED FEATURES (ported from the explorer build):
+     1. "Draw selection" — lasso a polygon on the map; all sightings inside it
+        drive the markers, heat, stat counts and the depth chart.
+     2. "Depth by site" chart with Profile + By site views.
+   ========================================================================== */
+if(!('poly' in state)) state.poly=null;
+if(!('depthView' in state)) state.depthView='profile';
+
+/* ---- point-in-polygon + selection predicate ---- */
+function inPoly(lat,lng,poly){let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const yi=poly[i][0],xi=poly[i][1],yj=poly[j][0],xj=poly[j][1];if(((yi>lat)!==(yj>lat))&&(lng<(xj-xi)*(lat-yi)/((yj-yi)||1e-12)+xi))inside=!inside;}return inside;}
+function rowInSel(r){ if(!state.poly) return true; const la=parseFloat(r[state.map.lat]), ln=parseFloat(r[state.map.lng]); if(!isFinite(la)||!isFinite(ln)) return false; return inPoly(la,ln,state.poly); }
+
+/* ---- Draw selection: pointer-drag lasso on the Leaflet map ---- */
+let drawMode=false,drawing=false,drawPts=[],drawLine=null;
+const drawLayer=L.layerGroup().addTo(map);
+const _mapEl=map.getContainer();
+function _ll(e){const r=_mapEl.getBoundingClientRect();return map.containerPointToLatLng([e.clientX-r.left,e.clientY-r.top]);}
+function setDrawMode(on){drawMode=on;const b=document.getElementById('drawBtn');
+  if(on){map.dragging.disable();map.doubleClickZoom.disable();map.boxZoom.disable();_mapEl.style.cursor='crosshair';_mapEl.style.touchAction='none';if(b){b.textContent='\u25cf Drawing\u2026 drag on map';b.classList.add('on2');}}
+  else{map.dragging.enable();map.doubleClickZoom.enable();map.boxZoom.enable();_mapEl.style.cursor='';_mapEl.style.touchAction='';if(b){b.textContent='\u270f Draw area on map';b.classList.remove('on2');}}}
+function clearDrawArea(){state.poly=null;drawLayer.clearLayers();drawLine=null;drawing=false;setDrawMode(false);const c=document.getElementById('drawClear');if(c)c.style.display='none';renderAll();}
+function _finishDraw(){drawing=false;
+  if(drawPts.length<3){drawLayer.clearLayers();drawLine=null;setDrawMode(false);return;}
+  state.poly=drawPts.map(p=>[p.lat,p.lng]);drawLayer.clearLayers();
+  L.polygon(drawPts,{color:'#4fd1c5',weight:2,fillColor:'#4fd1c5',fillOpacity:0.08,dashArray:'5 3'}).addTo(drawLayer);
+  drawLine=null;setDrawMode(false);const c=document.getElementById('drawClear');if(c)c.style.display='block';renderAll();}
+_mapEl.addEventListener('pointerdown',e=>{if(!drawMode)return;e.preventDefault();e.stopPropagation();drawing=true;drawPts=[_ll(e)];drawLayer.clearLayers();drawLine=L.polyline(drawPts,{color:'#4fd1c5',weight:2}).addTo(drawLayer);try{_mapEl.setPointerCapture(e.pointerId);}catch(_){}}, true);
+_mapEl.addEventListener('pointermove',e=>{if(!drawing)return;e.preventDefault();e.stopPropagation();drawPts.push(_ll(e));drawLine.setLatLngs(drawPts);}, true);
+_mapEl.addEventListener('pointerup',e=>{if(!drawing)return;e.preventDefault();e.stopPropagation();_finishDraw();}, true);
+_mapEl.addEventListener('pointercancel',()=>{if(drawing)_finishDraw();}, true);
+(function(){const b=document.getElementById('drawBtn');if(b)b.onclick=()=>{setDrawMode(!drawMode);};
+  const c=document.getElementById('drawClear');if(c)c.onclick=clearDrawArea;})();
+
+/* ---- Depth by site: build data from the visible sightings ---- */
+function quantile(sortedAsc,p){if(!sortedAsc.length)return 0;const idx=(sortedAsc.length-1)*p,lo=Math.floor(idx),hi=Math.ceil(idx);return lo===hi?sortedAsc[lo]:sortedAsc[lo]+(sortedAsc[hi]-sortedAsc[lo])*(idx-lo);}
+function _depthOf(r){const v=parseFloat(r[state.map.depth]);return (isFinite(v)&&Math.abs(v)>0)?Math.abs(v):null;}
+function _siteOf(r){return (String(r[state.map.site]==null?'':r[state.map.site]).trim())||'\u2014';}
+function buildDepth(){
+  const rows=state.rows.filter(r=>inWindow(r)&&rowInSel(r));
+  const db={}, siteDep={}; let dmax=24;
+  for(const r of rows){const d=_depthOf(r);if(d==null)continue;dmax=Math.max(dmax,d);
+    const band=Math.floor(d/2)*2; db[band]=(db[band]||0)+1;
+    const s=_siteOf(r);(siteDep[s]=siteDep[s]||[]).push(d);}
+  const DMAX=Math.max(10,Math.ceil(dmax/5)*5);
+  const siteBox=[];
+  for(const s in siteDep){const a=siteDep[s].sort((x,z)=>x-z);
+    siteBox.push({site:s,n:a.length,mn:a[0],mx:a[a.length-1],med:quantile(a,.5),q1:quantile(a,.25),q3:quantile(a,.75)});}
+  siteBox.sort((a,b)=>a.med-b.med);
+  return {db,siteBox,DMAX};
+}
+function drawDepthPanel(){
+  const t=document.getElementById('depthTitle'),el=document.getElementById('depthBars');
+  if(!el)return;
+  const view=state.depthView||'profile';
+  document.querySelectorAll('#depthSeg button').forEach(x=>x.classList.toggle('on',x.dataset.v===view));
+  const D=buildDepth();
+  if(view==='spread'){el.classList.remove('fill');if(t)t.textContent='Depth by site';drawDepthBySite(D.siteBox,el,D.DMAX);}
+  else{el.classList.add('fill');if(t)t.textContent='Depth profile';drawDepthProfile(D.db,el,D.DMAX);}
+}
+/* Profile: sightings binned into 2 m depth intervals */
+function drawDepthProfile(db,el,DMAX){el.innerHTML='';
+  if(!Object.keys(db).length){el.innerHTML='<div class="dnote">No depth records in the current view. Depths logged as 0 m or blank are excluded.</div>';return;}
+  const bands=[];for(let d=0;d<=DMAX;d+=2)bands.push(d);const mx=Math.max(1,...bands.map(b=>db[b]||0));
+  bands.forEach(bd=>{const v=db[bd]||0;const r=document.createElement('div');r.className='dband';
+    r.innerHTML=`<span class="dn" style="width:38px;text-align:right">${bd}\u2013${bd+2}</span><div class="db" style="width:${v/mx*100}%"></div><span class="dn">${v||''}</span>`;el.appendChild(r);});
+  const note=document.createElement('div');note.className='dnote';
+  note.textContent='Sightings grouped into 2 m depth bands (0 m / blank excluded). Reflects the current time window and drawn selection.';el.appendChild(note);}
+/* By site: box-and-whisker of depth per dive site, sorted shallow \u2192 deep */
+function drawDepthBySite(arr,body,DMAX){body.innerHTML='';
+  if(!arr.length){body.innerHTML='<div class="dnote">No depth records in the current view.</div>';return;}
+  const cw=body.clientWidth||320, ch=body.clientHeight||200;
+  const top=18, legendH=48, nrows=arr.length;
+  let rowh=Math.max(16,Math.min(30,(ch-top-legendH-6)/nrows));
+  const H=top+nrows*rowh+6;
+  const labelW=Math.min(150,Math.round(cw*0.44)), x0=labelW+6, x1=cw-34;
+  const X=d=>x0+(d/DMAX)*(x1-x0);
+  const fL=Math.max(8,Math.min(11,rowh*0.5)), fS=Math.max(7,fL-1.5);
+  let s=`<svg viewBox="0 0 ${cw} ${Math.round(H)}" width="100%" style="height:${Math.round(H)}px;display:block">`;
+  for(let d=0;d<=DMAX;d+=5){const Xx=X(d).toFixed(1);
+    s+=`<line x1="${Xx}" y1="${top-2}" x2="${Xx}" y2="${(H-2).toFixed(1)}" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>`;
+    s+=`<text x="${Xx}" y="${top-4}" fill="var(--faint)" font-size="${fS}" text-anchor="middle">${d}</text>`;}
+  s+=`<text x="${X(DMAX).toFixed(1)}" y="9" fill="var(--faint)" font-size="${fS}" text-anchor="end">metres</text>`;
+  arr.forEach((r,i)=>{const y=top+i*rowh+rowh/2;const small=r.n<5;const col=small?'var(--slate)':'var(--teal)';
+    const maxc=Math.max(6,Math.floor(labelW/(fL*0.52)));const name=r.site.length>maxc?r.site.slice(0,maxc-1)+'\u2026':r.site;
+    const bh=Math.min(12,rowh*0.5), cap=bh*0.55;
+    s+=`<g><title>${r.site}: median ${r.med.toFixed(0)} m, IQR ${r.q1.toFixed(0)}\u2013${r.q3.toFixed(0)} m, range ${r.mn.toFixed(0)}\u2013${r.mx.toFixed(0)} m (n=${r.n})</title>`;
+    s+=`<text x="${labelW}" y="${(y+fL*0.35).toFixed(1)}" fill="var(--muted)" font-size="${fL.toFixed(1)}" text-anchor="end">${name}</text>`;
+    if(r.n===1){s+=`<circle cx="${X(r.med).toFixed(1)}" cy="${y.toFixed(1)}" r="${(bh*0.32).toFixed(1)}" fill="${col}"/>`;}
+    else{s+=`<line x1="${X(r.mn).toFixed(1)}" y1="${y.toFixed(1)}" x2="${X(r.mx).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
+      s+=`<line x1="${X(r.mn).toFixed(1)}" y1="${(y-cap).toFixed(1)}" x2="${X(r.mn).toFixed(1)}" y2="${(y+cap).toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
+      s+=`<line x1="${X(r.mx).toFixed(1)}" y1="${(y-cap).toFixed(1)}" x2="${X(r.mx).toFixed(1)}" y2="${(y+cap).toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
+      const bx=X(r.q1),bw=Math.max(X(r.q3)-X(r.q1),1);
+      s+=`<rect x="${bx.toFixed(1)}" y="${(y-bh/2).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="2" fill="${col}" fill-opacity="0.5" stroke="${col}" stroke-width="0.8"/>`;
+      s+=`<line x1="${X(r.med).toFixed(1)}" y1="${(y-bh/2).toFixed(1)}" x2="${X(r.med).toFixed(1)}" y2="${(y+bh/2).toFixed(1)}" stroke="${col}" stroke-width="1.6"/>`;}
+    s+=`<text x="${(cw-30)}" y="${(y+fL*0.35).toFixed(1)}" fill="var(--faint)" font-size="${fS}">n=${r.n}</text></g>`;});
+  s+='</svg>';body.innerHTML=s;
+  const note=document.createElement('div');note.className='dnote';
+  note.innerHTML='Sorted shallow \u2192 deep. Box = <b>IQR</b> (middle 50% of dives, 25th\u201375th percentile); centre line = median; whiskers = full min\u2013max range. Grey = fewer than 5 depth records. Depths logged as 0 m are excluded.';
+  body.appendChild(note);}
+/* segmented toggle + redraw the by-site SVG on resize */
+(function(){document.querySelectorAll('#depthSeg button').forEach(b=>b.onclick=()=>{state.depthView=b.dataset.v;drawDepthPanel();});
+  let rz;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if((state.depthView||'profile')==='spread')drawDepthPanel();},200);});})();
 
 </script>
 
