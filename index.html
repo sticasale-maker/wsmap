@@ -685,8 +685,18 @@ const uid = () => 'r'+Math.random().toString(36).slice(2,9);
    MAP + SEED BATHYMETRY (verbatim from the explorer)
    ========================================================================== */
 const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([-33.7926,151.3030],15);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  {attribution:'© OpenStreetMap, © CARTO · data: Marco Bordieri & Seadragon Search · bathymetry: NSW DCCEEW (SEED)',maxZoom:19,subdomains:'abcd',crossOrigin:'anonymous'}).addTo(map);
+// CARTO raster tiles need an API key since 23 Sep 2026 (keyless = "API KEY REQUIRED" watermark).
+// Paste a free non-commercial key from https://carto.com/basemaps/apikey to use CARTO dark_all;
+// leave blank to fall back to keyless Esri World Dark Gray (native zoom 16, upscaled beyond).
+const CARTO_KEY='';
+const DATA_ATTR=' · data: Marco Bordieri & Seadragon Search · bathymetry: NSW DCCEEW (SEED)';
+if(CARTO_KEY){
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key='+CARTO_KEY,
+    {attribution:'© OpenStreetMap, © CARTO'+DATA_ATTR,maxZoom:19,subdomains:'abcd',crossOrigin:'anonymous'}).addTo(map);
+}else{
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    {attribution:'Tiles © Esri, HERE, Garmin, © OpenStreetMap'+DATA_ATTR,maxZoom:19,maxNativeZoom:16,crossOrigin:'anonymous'}).addTo(map);
+}
 
 const SEED=[
   {key:'DEM (depth)', pane:'seedDEM',  z:250,op:1.0, dpi:192,blend:'normal',  base:'https://mapprod2.environment.nsw.gov.au/arcgis/rest/services/Coastal_Marine/NSW_Marine_Lidar_Bathymetry_Data_2018/MapServer/export',show:'show:2',img:null},
