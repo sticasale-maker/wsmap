@@ -196,6 +196,28 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px
 .draft-pin:active{cursor:grabbing}
 @keyframes dpulse{50%{box-shadow:0 0 0 7px rgba(236,117,81,.25),0 2px 6px rgba(0,0,0,.5)}}
 
+/* find-specimen search box on the map */
+.find-ctl{width:236px;background:rgba(10,34,48,.94);border:1px solid var(--isobath-dim);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.4);font-family:var(--ui);color:var(--sand)}
+.find-ctl.on{border-color:#19e3ff;box-shadow:0 0 0 1px #19e3ff,0 4px 14px rgba(0,0,0,.4)}
+.find-row{display:flex;align-items:center;gap:6px;padding:6px 6px 6px 9px}
+.find-row svg{width:13px;height:13px;flex:none;stroke:var(--sand-dim);fill:none;stroke-width:2}
+.find-row input{flex:1;min-width:0;font:13px var(--ui);color:var(--sand);background:transparent;border:none;outline:none;padding:2px 0}
+.find-row input::placeholder{color:var(--sand-dim)}
+.find-go,.find-x{flex:none;border:1px solid var(--line);background:var(--abyss);color:var(--sand);border-radius:5px;font:600 11px var(--ui);padding:4px 8px;cursor:pointer}
+.find-go:hover{border-color:var(--isobath)}
+.find-x{display:none;padding:4px 7px}
+.find-ctl.on .find-x{display:block}
+.find-ctl.on .find-go{display:none}
+.find-info{display:none;border-top:1px solid var(--line);padding:7px 10px 8px;font-size:11.5px;line-height:1.45;color:var(--sand-dim)}
+.find-info.show{display:block}
+.find-info b{color:var(--sand);font-family:var(--disp);font-size:14px}
+.find-info .cands{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.find-info .cands button{border:1px solid var(--line);background:var(--abyss);color:var(--sand);border-radius:12px;font:600 11px var(--ui);padding:3px 9px;cursor:pointer}
+.find-info .cands button:hover{border-color:#19e3ff}
+.find-info .fit{color:#19e3ff;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+/* phones: the box sits on the top row beside "Show data" (moved out of the Leaflet corner by layoutFind) */
+.find-ctl.mob{position:absolute;top:12px;right:10px;width:auto;z-index:650}
+
 #viewToggle{display:none;position:absolute;top:12px;left:12px;z-index:600}
 
 /* ---- new-sighting modal (docked left, map stays interactive) ---- */
@@ -741,7 +763,7 @@ function bathyRefresh(){
 }
 map.on('moveend zoomend resize', bathyRefresh);
 // re-fan overlapping pins after a zoom so the spread stays a constant on-screen size
-map.on('zoomend', ()=>{ if(state.rows&&state.rows.length) renderMarkers(); if(currentTab()==='relocations' && state.curReloc) redrawRelocArrows(state.curReloc); });
+map.on('zoomend', ()=>{ if(state.rows&&state.rows.length) renderMarkers(); if(state.curReloc && (currentTab()==='relocations'||state.isoSrc==='find')) redrawRelocArrows(state.curReloc); });
 bathyRefresh();
 (function(){
   const Ctl=L.Control.extend({options:{position:'topright'},onAdd:function(){
@@ -1126,6 +1148,7 @@ function ingest(parsed,fit){
   // correct Sightings row even if the user later edits the date or coordinates
   state.rows.forEach(snapshotKey);
   computeLatest();   // determine each specimen's most-recent sighting for the map & Specimens tab
+  refreshIsolate();  // keep an isolated specimen isolated across a reload (rows get new _ids)
   state.dirty.clear();
   if(state.map.date) state.sort={col:state.map.date,dir:-1}; // newest first by default
   initTimeWindow();
@@ -1458,8 +1481,10 @@ function refreshMarker(row){
   if(row._marker){ state.markerLayer.removeLayer(row._marker); row._marker=null; }
   if(row._leg){ state.markerLayer.removeLayer(row._leg); row._leg=null; }
   if(!isFinite(lat)||!isFinite(lng)) return;
-  if(state.poly && !inPoly(lat,lng,state.poly)) return;   // outside the drawn selection
-  if(!inWindow(row)) return;                 // hidden by the time window
+  // an isolated specimen shows ALL its sightings, ignoring the drawn area and time window
+  const iso=!!state.isolateIds;
+  if(!iso && state.poly && !inPoly(lat,lng,state.poly)) return;   // outside the drawn selection
+  if(!iso && !inWindow(row)) return;         // hidden by the time window
   if(!onMap(row)) return;                    // map shows latest-per-specimen unless toggled
   // display position: spider-offset if this pin overlaps others, else true coords
   const off=(state.spider&&state.spider[row._id])||{lat,lng};
@@ -1719,7 +1744,7 @@ function renderSpecimens(){
   const head=document.createElement('div'); head.className='spec spec-head';
   head.innerHTML='<span class="dot dot-h" title="Pin colour = sex"></span>'
     +'<span class="sid">ID</span>'
-    +'<span class="meta"><span>Sex</span><span>Latest sighting</span><span>Depth</span></span>';
+    +'<span class="meta"><span>Sex</span><span>Latest sighting</span><span>Depth</span><span>Isolate</span></span>';
   specWrap.appendChild(head);
   groups.forEach(g=>{
     const first=g.rows[0];   // latest sighting (rows are ordered latest-first)
@@ -1727,14 +1752,19 @@ function renderSpecimens(){
     const dates=g.rows.map(r=>r[state.map.date]).filter(Boolean);
     const depth=state.map.depth?(first[state.map.depth]||''):'';
     const el=document.createElement('div'); el.className='spec'; el.dataset.spec=g.key;
+    const isoOn=state.isolateKey===g.key;
+    if(isoOn) el.classList.add('sel');
     el.innerHTML=`<span class="dot" style="background:${sexColor(first)}"></span>`
       +`<span class="sid">${g.id}</span>`
-      +`<span class="meta"><span>${sx||'—'}</span><span>${dates.length?dates[0]:'—'}</span><span>${depth?depth+' m':'—'}</span></span>`;
-    el.addEventListener('click',()=>highlightSpecimen(g,el));
+      +`<span class="meta"><span>${sx||'—'}</span><span>${dates.length?dates[0]:'—'}</span><span>${depth?depth+' m':'—'}</span>`
+      +`<span><label class="iso" title="Isolate on the map — show only this specimen's sightings"><input type="checkbox" class="isoChk"${isoOn?' checked':''}> </label></span></span>`;
+    el.addEventListener('click',e=>{ if(e.target.closest('.iso')) return; highlightSpecimen(g,el); });
+    el.querySelector('.isoChk').addEventListener('change',ev=>{ ev.stopPropagation(); if(ev.target.checked) isolateSpecimen(g); else clearIsolate(); });
     specWrap.appendChild(el);
   });
 }
 function highlightSpecimen(g,el){
+  if(state.isolateIds && state.isolateKey!==g.key) clearIsolate(true);   // picking another animal ends the isolate
   specWrap.querySelectorAll('.spec').forEach(x=>x.classList.remove('sel'));
   if(el) el.classList.add('sel');
   state.selId=null;
@@ -1837,6 +1867,7 @@ function redrawRelocArrows(x){
 }
 // draw the movement track for one specimen: numbered stops + directional arrows
 function showRelocation(x,el){
+  if(state.isoSrc==='find' && state.isolateKey!==x.g.key) clearIsolate(true);   // a map-search isolate of another animal ends here
   state.curReloc=x;   // remember for zoom redraw (arrowheads are pixel-space)
   relocWrap.querySelectorAll('.spec').forEach(n=>n.classList.remove('sel'));
   if(el) el.classList.add('sel');
@@ -1863,12 +1894,18 @@ function drawArrowHead(a,b,col){
   const right=map.layerPointToLatLng(L.point(hx-size*Math.cos(ang+spread),hy-size*Math.sin(ang+spread)));
   L.polygon([tip,left,right],{color:col,weight:1,fillColor:col,fillOpacity:.95,opacity:.95,interactive:false}).addTo(state.moveLayer);
 }
-function clearRelocations(){ state.curReloc=null; state.isolateKey=null; state.isolateIds=null; if(state.moveLayer) state.moveLayer.clearLayers(); }
+function clearRelocations(){
+  if(state.isoSrc==='find') return;   // a map-search isolate survives tab switches; its ✕ clears it
+  state.curReloc=null; state.isolateKey=null; state.isolateIds=null; state.isoSrc=null;
+  if(state.moveLayer) state.moveLayer.clearLayers();
+  syncIsoUI();
+}
 
 // Isolate: hide every pin except the chosen specimen's. Single-select — turning
 // one on turns any other off. Turning it off restores the normal map view.
 function toggleIsolate(x,on,el){
   if(on){
+    state.isoSrc='reloc';
     state.isolateKey=x.g.key;
     state.isolateIds=new Set(x.g.rows.map(r=>r._id));
     // reflect single-select in the other checkboxes
@@ -1876,13 +1913,193 @@ function toggleIsolate(x,on,el){
     showRelocation(x,el);                 // also draws the track + fits the map
     toast('Isolated '+x.g.id+' — other pins hidden');
   } else {
+    state.isoSrc=null;
     state.isolateKey=null;
     state.isolateIds=null;
     renderMarkers(); renderColonies();
     toast('Isolate off — all pins shown');
   }
+  syncIsoUI();
   updateStats();
 }
+
+/* ============================================================================
+   FIND SPECIMEN  (search box on the map)
+   Type a specimen ID → the map isolates that animal: every one of its sightings
+   (ignoring the time window and any drawn area), its movement track if it has
+   been seen in 2+ places, fitted to view. Survives tab switches; ✕ / Esc clears.
+   ========================================================================== */
+// "0531", "531", "531F", " 531m " all mean specimen 531
+const normSpecId=v=>String(v??'').trim().toUpperCase().replace(/\s+/g,'').replace(/^#/,'').replace(/^0+(?=\d)/,'').replace(/^(\d+)[MFJ]$/,'$1');
+function findSpecimen(q){
+  const n=normSpecId(q); if(!n) return {match:null,cands:[]};
+  const gs=buildSpecimens().filter(g=>g.id!=='unID');
+  const exact=gs.filter(g=>normSpecId(g.id)===n);
+  if(exact.length) return {match:exact[0],cands:exact};
+  let c=gs.filter(g=>normSpecId(g.id).startsWith(n));
+  if(!c.length) c=gs.filter(g=>normSpecId(g.id).includes(n));
+  c.sort((a,b)=>String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
+  return {match:c.length===1?c[0]:null,cands:c};
+}
+function fitIsolated(){
+  const g=state.isoGroup; if(!g) return;
+  const pts=g.rows.map(r=>[parseFloat(r[state.map.lat]),parseFloat(r[state.map.lng])]).filter(p=>isFinite(p[0])&&isFinite(p[1]));
+  if(!pts.length) return;
+  // keep the pins clear of the search box (top-left) and the layer panel (top-right)
+  const sz=map.getSize(), cont=map.getContainer();
+  const tr=cont.querySelector('.leaflet-top.leaflet-right'), tl=cont.querySelector('.leaflet-top.leaflet-left');
+  const mob=findCtl.classList.contains('mob');
+  const padR=mob?40:Math.min((tr?tr.offsetWidth:0)+30, sz.x*0.4);
+  // phone: the layer panels cover most of the top of the map, so fit into the clear strip below them
+  const padT=mob?Math.min((tr?tr.offsetTop+tr.offsetHeight:0)+24, sz.y-170)
+                :Math.min((tl?findCtl.offsetHeight:0)+30, sz.y*0.35);
+  const opts={paddingTopLeft:[50,padT],paddingBottomRight:[padR,40],maxZoom:17,animate:true};
+  if(pts.length===1) map.fitBounds([pts[0],pts[0]],opts);
+  else map.fitBounds(pts,opts);
+}
+function isolateSpecimen(g,opts){
+  opts=opts||{};
+  clearFlash();
+  state.isoSrc='find';
+  state.isoGroup=g;
+  state.isolateKey=g.key;
+  state.isolateIds=new Set(g.rows.map(r=>r._id));
+  state.selId=null;
+  state.specSel=new Set(g.rows.map(r=>r._id));
+  const track=specimenTrack(g), locs=distinctLocs(track);
+  state.curReloc=locs.length>=2?{g,track,locs,dist:trackDistance(track)}:null;
+  if(state.moveLayer) state.moveLayer.clearLayers();
+  if(state.curReloc) redrawRelocArrows(state.curReloc);
+  renderMarkers(); renderColonies(); updateStats();
+  syncIsoUI();
+  if(opts.fit!==false){
+    fitIsolated();
+    if(window.innerWidth<=820) setView('map');
+    if(!track.length) toast('Specimen '+g.id+' has no sightings with coordinates');
+    else if(g.rows.length===1) g.rows[0]._marker&&g.rows[0]._marker.openTooltip();
+  }
+}
+function clearIsolate(quiet){
+  state.isoSrc=null; state.isoGroup=null;
+  state.isolateKey=null; state.isolateIds=null; state.curReloc=null;
+  if(state.specSel) state.specSel.clear();
+  if(state.moveLayer) state.moveLayer.clearLayers();
+  if(!quiet){ renderMarkers(); renderColonies(); updateStats(); }
+  syncIsoUI();
+}
+// after a reload the rows get new _ids — re-derive the isolate from its specimen key
+function refreshIsolate(){
+  if(!state.isolateKey) return;
+  const g=buildSpecimens().find(x=>x.key===state.isolateKey);
+  if(!g){ clearIsolate(true); return; }
+  if(state.isoSrc==='find'){ isolateSpecimen(g,{fit:false}); return; }
+  state.isolateIds=new Set(g.rows.map(r=>r._id));
+}
+var findCtl=(()=>{
+  const C=L.Control.extend({options:{position:'topleft'},onAdd(){
+    const d=L.DomUtil.create('div','find-ctl');
+    d.innerHTML='<div class="find-row"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>'
+      +'<input id="findInp" list="findList" placeholder="Find specimen ID…" autocomplete="off" inputmode="search" enterkeyhint="search" aria-label="Find specimen">'
+      +'<button class="find-go" type="button" title="Isolate this specimen on the map">Go</button>'
+      +'<button class="find-x" type="button" title="Show all pins again (Esc)">✕</button></div>'
+      +'<datalist id="findList"></datalist><div class="find-info"></div>';
+    L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d);
+    return d;
+  }});
+  const c=new C().addTo(map), el=c.getContainer();
+  // sit above the zoom buttons
+  el.parentNode.insertBefore(el,el.parentNode.firstChild);
+  return el;
+})();
+var findInp=findCtl.querySelector('#findInp'), findInfo=findCtl.querySelector('.find-info');
+// desktop: top-left map control. Phone: top row beside "Show data", with the
+// layer panels pushed down below it so nothing overlaps.
+function layoutFind(){
+  const mob=window.innerWidth<=820, corners=map._controlCorners, tr=corners.topright;
+  if(mob){
+    if(findCtl.parentNode!==map.getContainer().parentNode) map.getContainer().parentNode.appendChild(findCtl);
+    findCtl.classList.add('mob');
+    const vt=document.getElementById('viewToggle');
+    findCtl.style.left=((vt&&vt.offsetWidth?vt.offsetLeft+vt.offsetWidth:12)+8)+'px';
+    tr.style.top=(findCtl.offsetHeight+16)+'px';
+    if(vt&&vt.offsetHeight) corners.topleft.style.top=(vt.offsetTop+vt.offsetHeight-4)+'px';   // zoom buttons below "Show data"
+  } else {
+    if(findCtl.parentNode!==corners.topleft) corners.topleft.insertBefore(findCtl,corners.topleft.firstChild);
+    findCtl.classList.remove('mob'); findCtl.style.left=''; tr.style.top=''; corners.topleft.style.top='';
+  }
+}
+window.addEventListener('resize',layoutFind);
+layoutFind();
+new MutationObserver(()=>{ if(findCtl.classList.contains('mob')) map._controlCorners.topright.style.top=(findCtl.offsetHeight+16)+'px'; })
+  .observe(findCtl,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
+function fillFindList(){
+  if(!findCtl) return;
+  const ids=buildSpecimens().filter(g=>g.id!=='unID').map(g=>g.id)
+    .sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
+  findCtl.querySelector('#findList').innerHTML=ids.map(id=>`<option value="${String(id).replace(/"/g,'&quot;')}">`).join('');
+}
+function runFind(){
+  const q=findInp.value.trim();
+  if(!q){ if(state.isoSrc==='find') clearIsolate(); return; }
+  if(!state.rows.length){ toast('Sightings are still loading'); return; }
+  const {match,cands}=findSpecimen(q);
+  if(match){ if(state.isolateKey!==match.key||state.isoSrc!=='find') isolateSpecimen(match); else fitIsolated(); findInp.blur(); return; }
+  findCtl.classList.remove('on');
+  if(!cands.length){
+    findInfo.innerHTML='No specimen matches “'+q.replace(/</g,'&lt;')+'”';
+  } else {
+    findInfo.innerHTML=cands.length+' specimens match — pick one:<div class="cands">'
+      +cands.slice(0,24).map(g=>`<button type="button" data-k="${String(g.key).replace(/"/g,'&quot;')}">${g.id}</button>`).join('')
+      +(cands.length>24?' …':'')+'</div>';
+    findInfo.querySelectorAll('.cands button').forEach(b=>b.addEventListener('click',()=>{
+      const g=cands.find(x=>String(x.key)===b.dataset.k); if(g){ findInp.value=g.id; isolateSpecimen(g); }
+    }));
+  }
+  findInfo.classList.add('show');
+}
+// show the isolated specimen in the search box and keep the list checkboxes in step
+function syncIsoUI(){
+  if(!findCtl) return;   // called before the control exists (early boot)
+  const on=state.isoSrc==='find' && state.isoGroup;
+  findCtl.classList.toggle('on',!!on);
+  if(on){
+    const g=state.isoGroup, latest=g.rows[0];
+    const sx=state.map.sex?String(latest[state.map.sex]||'').trim():'';
+    const dates=g.rows.map(r=>r[state.map.date]).filter(Boolean).sort();
+    const located=g.rows.filter(r=>isFinite(parseFloat(r[state.map.lat]))&&isFinite(parseFloat(r[state.map.lng]))).length;
+    const n=g.rows.length;
+    let html=`<b>${g.id}</b>${sx?' · '+sx:''} · ${n} sighting${n===1?'':'s'}`;
+    if(dates.length) html+=`<br>${dates.length>1&&dates[0]!==dates[dates.length-1]?dates[0]+' → '+dates[dates.length-1]:'Seen '+dates[dates.length-1]}`;
+    if(state.curReloc) html+=`<br>Moved between ${state.curReloc.locs.length} spots · ${fmtDist(state.curReloc.dist)} path`;
+    if(located<n) html+=`<br>${n-located} without coordinates (not on map)`;
+    html+=`<br><span class="fit">Zoom to it</span> · other pins hidden`;
+    findInfo.innerHTML=html; findInfo.classList.add('show');
+    findInfo.querySelector('.fit').addEventListener('click',fitIsolated);
+    if(document.activeElement!==findInp) findInp.value=g.id;
+  } else if(findCtl.classList.contains('was-on')){
+    findInfo.classList.remove('show'); findInfo.innerHTML='';
+  }
+  findCtl.classList.toggle('was-on',!!on);
+  // Specimens/Relocations tick boxes mirror whichever specimen is isolated
+  [specWrap,relocWrap].forEach(w=>w&&w.querySelectorAll('.spec[data-spec]').forEach(n=>{
+    const cb=n.querySelector('.isoChk'); if(cb) cb.checked=state.isolateKey===n.dataset.spec;
+  }));
+}
+findCtl.querySelector('.find-go').addEventListener('click',runFind);
+findCtl.querySelector('.find-x').addEventListener('click',()=>{ findInp.value=''; clearIsolate(); toast('All pins shown'); });
+findInp.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ e.preventDefault(); runFind(); }
+  else if(e.key==='Escape'){ e.stopPropagation(); findInp.value=''; if(state.isoSrc==='find'){ clearIsolate(); toast('All pins shown'); } else { findInfo.classList.remove('show'); } findInp.blur(); }
+});
+// choosing from the suggestion list isolates straight away (typing does not —
+// "53" would otherwise jump to specimen 53 before you finish typing "531")
+findInp.addEventListener('input',e=>{
+  if(!e.inputType || e.inputType==='insertReplacementText'){
+    const {match}=findSpecimen(findInp.value);
+    if(match && normSpecId(match.id)===normSpecId(findInp.value)) runFind();
+  }
+  if(!findInp.value.trim() && state.isoSrc!=='find') findInfo.classList.remove('show');
+});
 
 function currentTab(){ const a=document.querySelector('.tab.active'); return a?a.dataset.tab:'sightings'; }
 function setTab(t){
@@ -1898,7 +2115,7 @@ function setTab(t){
   else {
     gridWrap.style.display='block';
     if(state.colonyOn){ state.colonyOn=false; if(window.syncSdCtl) syncSdCtl(); persist(); }
-    if(state.specSel&&state.specSel.size){ state.specSel.clear(); }
+    if(state.specSel&&state.specSel.size && state.isoSrc!=='find'){ state.specSel.clear(); }
     clearFlash(); clearRelocations();
     renderColonies(); renderMarkers();
   }
@@ -2552,7 +2769,7 @@ function updateStats(){
   document.getElementById('statIndiv').textContent=indiv;
   document.getElementById('statColonies').textContent=col;
 }
-function renderAll(){ renderGrid(); renderColonies(); renderMarkers(); updateStats(); drawDepthPanel(); if(currentTab()==='specimens') renderSpecimens(); }
+function renderAll(){ fillFindList(); renderGrid(); renderColonies(); renderMarkers(); updateStats(); drawDepthPanel(); if(currentTab()==='specimens') renderSpecimens(); }
 
 /* ============================================================================
    TIME WINDOW  (filter sightings by day across grid, map, colonies, heatmap)
@@ -2716,7 +2933,7 @@ function setView(v){
   document.body.classList.remove('view-map','view-data');
   document.body.classList.add('view-'+v);
   document.getElementById('viewToggle').textContent = v==='map'?'Show data':'Show map';
-  if(v==='map') setTimeout(()=>{map.invalidateSize();bathyRefresh();},50);
+  if(v==='map') setTimeout(()=>{map.invalidateSize();bathyRefresh();layoutFind();},50);
 }
 document.getElementById('viewToggle').addEventListener('click',()=>{
   setView(document.body.classList.contains('view-map')?'data':'map');
